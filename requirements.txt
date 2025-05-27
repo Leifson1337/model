@@ -16,3 +16,4 @@ transformers sentencia 0.2.2
 torch torchvision torchaudio # Added torch as a common backend for transformers
 # sentencepiece # Often needed for tokenizers, can be added if specific model requires it
 # sacremoses # Also sometimes needed for tokenizers
+streamlit
