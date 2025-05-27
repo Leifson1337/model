@@ -1,22 +1,90 @@
 # gui.py
 import streamlit as st
-from datetime import datetime, date 
-import pandas as pd 
+from datetime import datetime, date
+import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt 
+import matplotlib.pyplot as plt
+import subprocess
+import json
+import tempfile
+import os
+import sys # To ensure using the same python executable
 
 from src import config
-from src.data_management import download_stock_data 
-from src.feature_engineering import add_technical_indicators, add_rolling_lag_features, create_target_variable
-from src.sentiment_analysis import get_daily_sentiment_scores 
-from src.fundamental_data import add_fundamental_features_to_data
-from src import modeling # train_X, predict_X functions are here
-from src import utils # save_model, load_model
-from src.evaluation import plot_roc_auc, plot_confusion_matrix 
+from src.config_models import ( # Import Pydantic models for config generation
+    LoadDataConfig,
+    FeatureEngineeringConfig,
+    TrainModelConfig,
+    EvaluateModelConfig,
+    BacktestConfig,
+    ExportConfig,
+    ModelParamsConfig # If needed for constructing parts of other configs
+)
+# Direct src imports will be gradually replaced or used only for data structures/display
+# from src.data_management import download_stock_data 
+# from src.feature_engineering import add_technical_indicators, add_rolling_lag_features, create_target_variable
+# from src.sentiment_analysis import get_daily_sentiment_scores 
+# from src.fundamental_data import add_fundamental_features_to_data
+# from src import modeling # train_X, predict_X functions are here
+# from src import utils # save_model, load_model
+# from src.evaluation import plot_roc_auc, plot_confusion_matrix 
 
-from sklearn.model_selection import train_test_split
-# from sklearn.preprocessing import MinMaxScaler # Handled in modeling functions for DL
-from sklearn.metrics import accuracy_score, classification_report 
+# --- Helper Functions for CLI Interaction ---
+
+def create_temp_config_file(config_data: dict) -> str:
+    """Creates a temporary JSON config file and returns its path."""
+    try:
+        # Create a temporary file
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json', dir='.') as tmp_file:
+            json.dump(config_data, tmp_file, indent=4)
+            return tmp_file.name
+    except Exception as e:
+        st.error(f"Error creating temporary config file: {e}")
+        return None
+
+def run_cli_command(command_parts: list[str]) -> tuple[str, str, int]:
+    """Runs a CLI command using subprocess and returns output, error, and return code."""
+    try:
+        # Use sys.executable to ensure using the same python interpreter
+        # that streamlit is running with. This helps with virtual environments.
+        full_command = [sys.executable] + command_parts
+        st.info(f"Executing: {' '.join(full_command)}")
+        process = subprocess.run(full_command, capture_output=True, text=True, check=False) # check=False to handle non-zero exit codes manually
+        
+        stdout_output = process.stdout if process.stdout else ""
+        stderr_output = process.stderr if process.stderr else ""
+        
+        if stdout_output:
+            st.subheader("CLI Output (stdout):")
+            st.text_area("stdout", stdout_output, height=150, key=f"stdout_{command_parts[1]}_{datetime.now().timestamp()}")
+        
+        if stderr_output:
+            st.subheader("CLI Output (stderr):")
+            st.text_area("stderr", stderr_output, height=150, key=f"stderr_{command_parts[1]}_{datetime.now().timestamp()}")
+
+        if process.returncode != 0:
+            st.error(f"Command '{' '.join(full_command)}' failed with exit code {process.returncode}.")
+            
+        return stdout_output, stderr_output, process.returncode
+    except Exception as e:
+        st.error(f"Exception during CLI command execution: {e}")
+        return "", str(e), -1 # Indicate failure with -1
+
+# --- End Helper Functions ---
+
+
+from src.data_management import download_stock_data # Keep for now for direct use if needed, or for comparison
+# These imports are now mostly for reference or for parts of the GUI not yet refactored.
+# The goal is to have the core logic triggered via main.py CLI calls.
+from src.feature_engineering import add_technical_indicators, add_rolling_lag_features, create_target_variable # Keep for now
+from src.sentiment_analysis import get_daily_sentiment_scores # Keep for now
+from src.fundamental_data import add_fundamental_features_to_data # Keep for now
+from src import modeling # Keep for now
+from src import utils # Keep for now
+from src.evaluation import plot_roc_auc, plot_confusion_matrix # Keep for now for plotting
+
+from sklearn.model_selection import train_test_split # Keep for now
+from sklearn.metrics import accuracy_score, classification_report # Keep for now
 
 # --- Page Configuration ---
 st.set_page_config(page_title="Quantitative Leverage Predictor", layout="wide")
@@ -65,169 +133,309 @@ tab1, tab2, tab3, tab4 = st.tabs(["📊 Load & Analyze Data", "🛠️ Feature E
 with tab1: 
     st.header("Load & Analyze Stock Data")
     st.write(f"**Selected Ticker:** {st.session_state.selected_ticker}, **Date Range:** {st.session_state.start_date.strftime('%Y-%m-%d')} to {st.session_state.end_date.strftime('%Y-%m-%d')}")
-    if st.button("Load Data", key="load_data_tab1_button_final_final_final"):
-        st.session_state.load_data_tab1_clicked = True
-        with st.spinner("Loading data..."):
+    if st.button("Load Data via CLI", key="load_data_tab1_cli_button"):
+        st.session_state.load_data_tab1_clicked = True # Keep this for UI flow
+        
+        # 1. Collect parameters for config and structure with Pydantic model
+        try:
+            load_data_params = LoadDataConfig(
+                ticker=st.session_state.selected_ticker,
+                start_date=st.session_state.start_date.strftime("%Y-%m-%d"),
+                end_date=st.session_state.end_date.strftime("%Y-%m-%d"),
+                # Assuming default output_parquet_path from model is acceptable or set it if needed
+                output_parquet_path=f"data/raw/{st.session_state.selected_ticker.lower()}_gui_data.parquet" # Example
+            )
+            config_payload = load_data_params.model_dump(mode='json') # Get dict for JSON serialization
+        except Exception as e_pydantic: # Catch Pydantic validation error or other issues
+            st.error(f"Error creating LoadDataConfig: {e_pydantic}")
+            temp_config_path = None # Ensure it's None so CLI call is skipped
+        else:
+            # 2. Create temporary config file
+            temp_config_path = create_temp_config_file(config_payload)
+        
+        if temp_config_path:
+            # 3. Construct CLI command
+            cli_command_parts = ["main.py", "load-data", "--config", temp_config_path]
+            
+            # 4. Run command
+            with st.spinner("Requesting data load from CLI..."):
+                stdout_cli, stderr_cli, returncode = run_cli_command(cli_command_parts)
+            
+            # 5. Display output (handled by run_cli_command)
+            if returncode == 0:
+                st.success("CLI 'load-data' command executed. See output above.")
+                # For now, we don't get data back directly.
+                # The GUI's internal st.session_state.stock_data will NOT be updated by this CLI call.
+                # This part needs further design if data needs to be passed back to Streamlit state.
+                # For this subtask, displaying CLI output is the primary goal.
+                st.session_state.stock_data = None # Explicitly set to None or handle differently
+                st.warning("Note: GUI data display is bypassed when using CLI for load. Check CLI output for status.")
+
+            # 6. Clean up temp config file
             try:
-                data_df = download_stock_data([st.session_state.selected_ticker], st.session_state.start_date.strftime("%Y-%m-%d"), st.session_state.end_date.strftime("%Y-%m-%d"))
-                if data_df is None or data_df.empty: st.warning("No data returned."); st.session_state.stock_data = None
-                else:
-                    st.session_state.stock_data = data_df.xs(st.session_state.selected_ticker, axis=1, level=0, drop_level=True) if isinstance(data_df.columns, pd.MultiIndex) and st.session_state.selected_ticker in data_df.columns.levels[0] else data_df
-                    st.success("Data loaded!")
-            except Exception as e: st.error(f"Error: {e}"); st.session_state.stock_data = None
-    if st.session_state.stock_data is not None:
-        st.subheader("Preview"); st.dataframe(st.session_state.stock_data.head())
+                os.remove(temp_config_path)
+            except Exception as e:
+                st.warning(f"Could not remove temporary config file {temp_config_path}: {e}")
+                
+    # Existing data display logic (will not be populated by the CLI call for now)
+    if st.session_state.stock_data is not None: # This block will likely not execute after CLI call
+        st.subheader("Preview (Direct Load - Bypassed by CLI)"); st.dataframe(st.session_state.stock_data.head())
         if 'Close' in st.session_state.stock_data: st.subheader("Price Chart"); st.line_chart(st.session_state.stock_data['Close'])
         if 'Volume' in st.session_state.stock_data: st.subheader("Volume Chart"); st.bar_chart(st.session_state.stock_data['Volume'])
         st.subheader("Statistics"); st.dataframe(st.session_state.stock_data.describe())
-    elif st.session_state.load_data_tab1_clicked: st.info("Data could not be loaded.")
-    else: st.info("Click 'Load Data'.")
+    elif st.session_state.load_data_tab1_clicked: st.info("Attempted data load. Check CLI output if 'Load Data via CLI' was used.")
+    else: st.info("Click 'Load Data via CLI' to use the backend pipeline.")
+
 
 with tab2: 
     st.header("Feature Engineering Options")
-    if st.session_state.stock_data is None: st.warning("Load data in Tab 1.")
+    # This tab assumes data might have been loaded into st.session_state.stock_data by *some* means
+    # or that feature engineering can run on a predefined dataset path from config.
+    # For CLI integration, it's best if engineer-features uses a path from its config.
+    if st.session_state.get('stock_data_loaded_via_cli', False) or st.session_state.stock_data is None:
+        st.info("Feature engineering via CLI will assume data is loaded by a previous 'load-data' CLI step, referenced in its config.")
     else:
-        st.subheader("Select Features")
-        st.session_state.generate_technical = st.checkbox("Technical Indicators", st.session_state.generate_technical, key="cb_tech_gui_final_final_final")
-        st.session_state.generate_rolling_lag = st.checkbox("Rolling & Lag", st.session_state.generate_rolling_lag, key="cb_roll_gui_final_final_final")
-        st.session_state.generate_sentiment = st.checkbox("Sentiment (NewsAPI Key needed)", st.session_state.generate_sentiment, key="cb_sent_gui_final_final_final")
-        st.session_state.generate_fundamental = st.checkbox("Fundamental Data", st.session_state.generate_fundamental, key="cb_fund_gui_final_final_final")
-        st.session_state.generate_target = st.checkbox("Target Variable", st.session_state.generate_target, key="cb_target_gui_final_final_final")
-        if st.button("Generate Features", key="gen_features_tab2_button_final_final_final"):
-            with st.spinner("Generating..."):
-                try:
-                    df = st.session_state.stock_data.copy()
-                    if st.session_state.generate_technical: df = add_technical_indicators(df.copy(), fillna=False)
-                    if st.session_state.generate_rolling_lag: df = add_rolling_lag_features(df.copy())
-                    if st.session_state.generate_sentiment:
-                        if config.NEWS_API_KEY == "YOUR_NEWS_API_KEY_HERE" or not config.NEWS_API_KEY: st.warning("NewsAPI key not set.")
-                        else:
-                            s_start = st.session_state.end_date - pd.Timedelta(days=60); s_start = max(s_start, st.session_state.start_date)
-                            sent_df = get_daily_sentiment_scores(st.session_state.selected_ticker, s_start.strftime("%Y-%m-%d"), st.session_state.end_date.strftime("%Y-%m-%d"))
-                            if not sent_df.empty: df = df.merge(sent_df, left_index=True, right_index=True, how='left'); df[sent_df.columns] = df[sent_df.columns].ffill().fillna(0)
-                    if st.session_state.generate_fundamental: df = add_fundamental_features_to_data(df.copy(), st.session_state.selected_ticker)
-                    if st.session_state.generate_target: df = create_target_variable(df.copy(), 5, 0.03) 
-                    st.session_state.feature_data = df; st.success("Features generated!")
-                except Exception as e: st.error(f"Error: {e}"); st.session_state.feature_data = None
-        if st.session_state.feature_data is not None:
-            st.subheader("Preview with Features"); st.dataframe(st.session_state.feature_data.head())
-            st.write(f"Shape: {st.session_state.feature_data.shape}, Nulls: {st.session_state.feature_data.isnull().sum().sum()}")
+    # Feature selection checkboxes
+    st.subheader("Select Features to Generate (via CLI)")
+    st.session_state.generate_technical = st.checkbox("Technical Indicators", st.session_state.generate_technical, key="cb_tech_cli")
+    st.session_state.generate_rolling_lag = st.checkbox("Rolling & Lag", st.session_state.generate_rolling_lag, key="cb_roll_cli")
+    st.session_state.generate_sentiment = st.checkbox("Sentiment (NewsAPI Key needed)", st.session_state.generate_sentiment, key="cb_sent_cli")
+    st.session_state.generate_fundamental = st.checkbox("Fundamental Data", st.session_state.generate_fundamental, key="cb_fund_cli")
+    st.session_state.generate_target = st.checkbox("Target Variable", st.session_state.generate_target, key="cb_target_cli")
+
+    if st.button("Generate Features via CLI", key="gen_features_tab2_cli_button"):
+        # 1. Collect parameters and structure with Pydantic model
+        try:
+            # Placeholder paths - these should be managed in a real pipeline (e.g., from a global config or prior step output)
+            # For GUI interaction, it might be that load-data step output a known filename that engineer-features consumes.
+            input_path_placeholder = f"data/raw/{st.session_state.selected_ticker.lower()}_gui_data.parquet" # Matching example from load_data
+            output_path_placeholder = f"data/processed/{st.session_state.selected_ticker.lower()}_gui_features.parquet"
+
+            feature_eng_params = FeatureEngineeringConfig(
+                input_data_path=input_path_placeholder, 
+                output_features_path=output_path_placeholder,
+                technical_indicators=st.session_state.generate_technical,
+                rolling_lag_features=st.session_state.generate_rolling_lag,
+                sentiment_features=st.session_state.generate_sentiment,
+                fundamental_features=st.session_state.generate_fundamental,
+                target_variable={ # Using dict here as TargetVariableConfig is nested
+                    "enabled": st.session_state.generate_target,
+                    "days_forward": 5, # Example, make configurable if needed
+                    "threshold": 0.03  # Example, make configurable if needed
+                }
+                # ticker for fundamental/sentiment is not explicitly in FeatureEngineeringConfig root,
+                # but could be passed if those steps need it directly (currently internal to them).
+            )
+            config_payload = feature_eng_params.model_dump(mode='json')
+        except Exception as e_pydantic:
+            st.error(f"Error creating FeatureEngineeringConfig: {e_pydantic}")
+            temp_config_path = None
+        else:
+            # 2. Create temp config
+            temp_config_path = create_temp_config_file(config_payload)
+        
+        if temp_config_path:
+            # 3. Construct command
+            cli_command_parts = ["main.py", "engineer-features", "--config", temp_config_path]
+            
+            # 4. Run command
+            with st.spinner("Requesting feature engineering from CLI..."):
+                stdout_cli, stderr_cli, returncode = run_cli_command(cli_command_parts)
+            
+            if returncode == 0:
+                st.success("CLI 'engineer-features' command executed.")
+                st.session_state.feature_data = None # Clear any old directly-loaded feature data
+                st.warning("Note: GUI feature data display is bypassed. Check CLI output.")
+
+            # 5. Clean up
+            try:
+                os.remove(temp_config_path)
+            except Exception as e:
+                st.warning(f"Could not remove temporary config file {temp_config_path}: {e}")
+                
+    # Display of feature_data (will not be populated by CLI for now)
+    if st.session_state.feature_data is not None:
+        st.subheader("Preview with Features (Direct Load - Bypassed by CLI)"); st.dataframe(st.session_state.feature_data.head())
+        st.write(f"Shape: {st.session_state.feature_data.shape}, Nulls: {st.session_state.feature_data.isnull().sum().sum()}")
+
 
 with tab3:
-    st.header("Model Training and Evaluation")
-    if 'feature_data' not in st.session_state or st.session_state.feature_data is None:
-        st.warning("Please generate features in the 'Feature Engineering' tab first.")
-    else:
-        st.subheader("1. Select Model")
-        available_models = ["XGBoost", "LightGBM", "CatBoost", "LSTM", "CNN-LSTM", "Transformer"] 
-        st.session_state.selected_model_type_tab3 = st.selectbox("Choose a Model:", options=available_models,
-            index=available_models.index(st.session_state.selected_model_type_tab3), key="model_choice_tab3_final_final")
-        
-        if 'target' not in st.session_state.feature_data.columns:
-            st.error("Target variable 'target' not found. Please generate it in Tab 2.")
+    st.header("Model Training and Evaluation via CLI")
+    st.info("This tab will use the CLI to train models. Ensure features are generated first (via CLI).")
+
+    st.subheader("1. Select Model Type")
+    available_models_cli = ["XGBoost", "LightGBM", "CatBoost", "LSTM", "CNN-LSTM", "Transformer"] 
+    st.session_state.selected_model_type_tab3 = st.selectbox("Choose a Model for CLI Training:", 
+        options=available_models_cli,
+        index=available_models_cli.index(st.session_state.selected_model_type_tab3), 
+        key="model_choice_tab3_cli")
+
+    # Example parameters - in a real scenario, these would be more dynamic
+    model_params_payload = {
+        "XGBoost": {"n_estimators": 100, "learning_rate": 0.1},
+        "LightGBM": {"n_estimators": 100, "learning_rate": 0.1},
+        "CatBoost": {"iterations": 100, "learning_rate": 0.1},
+        "LSTM": {"units": 50, "epochs": 10, "batch_size": 32, "sequence_length": 20},
+        "CNN-LSTM": {"filters": 32, "kernel_size": 3, "lstm_units": 50, "epochs": 10, "batch_size": 32, "sequence_length": 20},
+        "Transformer": {"head_size": 128, "num_heads": 4, "ff_dim": 2, "num_transformer_blocks": 2, "mlp_units": [64], "epochs": 5, "batch_size": 32, "sequence_length": 20} # Simplified
+    }
+
+    selected_cli_model_params = model_params_payload.get(st.session_state.selected_model_type_tab3, {})
+
+    if st.button(f"Train {st.session_state.selected_model_type_tab3} Model via CLI", key=f"train_{st.session_state.selected_model_type_tab3}_cli_btn"):
+        # 1. Collect params and structure with Pydantic model
+        try:
+            # Placeholder paths
+            input_feat_path_placeholder = f"data/processed/{st.session_state.selected_ticker.lower()}_gui_features.parquet" # Matching example from engineer_features
+            model_output_base_placeholder = f"models/{st.session_state.selected_ticker}_{st.session_state.selected_model_type_tab3.lower()}_gui_cli_model"
+            scaler_output_placeholder = f"models/{st.session_state.selected_ticker}_{st.session_state.selected_model_type_tab3.lower()}_gui_cli_scaler.pkl" if st.session_state.selected_model_type_tab3 in ["LSTM", "CNN-LSTM", "Transformer"] else None
+
+            # Ensure model_params are structured correctly for ModelParamsConfig
+            # The selected_cli_model_params is already a dict.
+            # Pydantic will validate it when creating TrainModelConfig.
+            
+            train_model_pydantic_params = TrainModelConfig(
+                input_features_path=input_feat_path_placeholder,
+                model_output_path_base=model_output_base_placeholder,
+                scaler_output_path=scaler_output_placeholder,
+                model_type=st.session_state.selected_model_type_tab3,
+                model_params=selected_cli_model_params, # This should be a dict compatible with ModelParamsConfig
+                target_column="target" # Assuming 'target' is standard
+            )
+            config_payload = train_model_pydantic_params.model_dump(mode='json')
+        except Exception as e_pydantic:
+            st.error(f"Error creating TrainModelConfig: {e_pydantic}")
+            temp_config_path = None
         else:
-            df_model_input = st.session_state.feature_data.dropna(subset=['target'])
-            potential_feature_cols = [col for col in df_model_input.columns if col not in ['target','Open','High','Low','Close','Volume','Adj Close'] and df_model_input[col].dtype in [np.int64,np.float64,np.int32,np.float32,int,float]]
-            X_all_features = df_model_input[potential_feature_cols].copy()
-            X_all_features.fillna(method='ffill', inplace=True); X_all_features.fillna(method='bfill', inplace=True)
-            X_all_features.dropna(axis=1, how='all', inplace=True); X_all_features.dropna(axis=0, how='any', inplace=True)
-            y_all_features = df_model_input['target'].loc[X_all_features.index]
+            # 2. Create temp config
+            temp_config_path = create_temp_config_file(config_payload)
 
-            if X_all_features.empty or y_all_features.empty or len(X_all_features) < 30:
-                st.error(f"Not enough data after preprocessing ({len(X_all_features)} samples).")
-            else:
-                X_train, X_test, y_train, y_test = train_test_split(X_all_features, y_all_features, test_size=0.2, shuffle=False)
-                st.write(f"Overall training data shape: {X_train.shape}, Test data shape: {X_test.shape}")
+        if temp_config_path:
+            # 3. Construct command
+            cli_command_parts = ["main.py", "train-model", "--config", temp_config_path]
+            
+            # 4. Run command
+            with st.spinner(f"Requesting {st.session_state.selected_model_type_tab3} model training from CLI..."):
+                stdout_cli, stderr_cli, returncode = run_cli_command(cli_command_parts)
 
-                model_key_selected = st.session_state.selected_model_type_tab3
-                
-                # --- Tree Models (XGBoost, LightGBM, CatBoost) ---
-                if model_key_selected in ["XGBoost", "LightGBM", "CatBoost"]:
-                    st.subheader(f"{model_key_selected} Model")
-                    if st.button(f"Train {model_key_selected} Model", key=f"train_{model_key_selected}_final_final_btn"):
-                        st.session_state.trained_model_info[model_key_selected] = {} 
-                        with st.spinner(f"Training {model_key_selected}..."):
-                            try:
-                                train_func = getattr(modeling, f"train_{model_key_selected.lower()}", None)
-                                model = train_func(X_train, y_train) 
-                                st.session_state.trained_model_info[model_key_selected].update({'model': model, 'feature_columns': list(X_train.columns), 'X_test': X_test, 'y_test': y_test})
-                                st.success(f"{model_key_selected} trained!")
-                            except Exception as e: st.error(f"Error: {e}"); st.session_state.trained_model_info.pop(model_key_selected, None)
-                    
-                    if st.session_state.get('trained_model_info', {}).get(model_key_selected, {}).get('model'):
-                        st.markdown(f"#### Evaluation: {model_key_selected}")
-                        info = st.session_state.trained_model_info[model_key_selected]
-                        model_eval, X_test_eval, y_test_eval = info['model'], info['X_test'][info['feature_columns']], info['y_test']
-                        if 'y_pred_class' not in info or 'y_pred_proba' not in info:
-                             with st.spinner("Generating predictions..."):
-                                predict_func = getattr(modeling, f"predict_{model_key_selected.lower()}", None)
-                                info['y_pred_class'], info['y_pred_proba'] = predict_func(model_eval, X_test_eval)
-                        st.text(f"Accuracy: {accuracy_score(y_test_eval, info['y_pred_class']):.4f}")
-                        st.text_area("Report:", classification_report(y_test_eval, info['y_pred_class'], zero_division=0), height=200, key=f"{model_key_selected}_report_final_final")
-                        col1, col2 = st.columns(2)
-                        with col1: fig, ax = plt.subplots(); plot_roc_auc(y_test_eval, info['y_pred_proba'], ax=ax, model_name=model_key_selected); st.pyplot(fig); plt.close(fig)
-                        with col2: fig, ax = plt.subplots(); plot_confusion_matrix(y_test_eval, info['y_pred_class'], ax=ax, model_name=model_key_selected); st.pyplot(fig); plt.close(fig)
-                        if hasattr(model_eval, 'feature_importances_') or (model_key_selected == "CatBoost" and hasattr(model_eval, 'get_feature_importance')):
-                            st.subheader("Feature Importances"); 
-                            f_imp_vals = model_eval.feature_importances_ if hasattr(model_eval, 'feature_importances_') else model_eval.get_feature_importance()
-                            f_imp = pd.Series(f_imp_vals, index=info['feature_columns']).sort_values(ascending=False).head(15)
-                            fig_fi, ax_fi = plt.subplots(figsize=(10,6)); ax_fi.barh(f_imp.index, f_imp.values); ax_fi.set_title(f"Top 15 ({model_key_selected})"); ax_fi.invert_yaxis(); plt.tight_layout(); st.pyplot(fig_fi); plt.close(fig_fi)
-                        fn_ext_map = {"XGBoost": ".json", "LightGBM": ".txt", "CatBoost": ".cbm"}
-                        if st.button(f"Save {model_key_selected} Model", key=f"save_{model_key_selected}_final_final_btn"): 
-                            utils.save_model(model_eval, f"{st.session_state.selected_ticker}_{model_key_selected.lower()}_model{fn_ext_map.get(model_key_selected)}", config.MODELS_DIR); st.success("Model saved.")
-                
-                # --- Sequence Models (LSTM, CNN-LSTM, Transformer) ---
-                elif model_key_selected in ["LSTM", "CNN-LSTM", "Transformer"]:
-                    st.subheader(f"{model_key_selected} Model")
-                    fit_params_dl = {'epochs': 10, 'batch_size': 32, 'validation_split': 0.1, 'verbose': 0} # Reduced for GUI
-                    sequence_length_dl = 20 
+            if returncode == 0:
+                st.success(f"CLI 'train-model' for {st.session_state.selected_model_type_tab3} executed.")
+                st.warning("Note: GUI model display/evaluation is bypassed. Check CLI output.")
+            
+            # 5. Clean up
+            try:
+                os.remove(temp_config_path)
+            except Exception as e:
+                st.warning(f"Could not remove temporary config file {temp_config_path}: {e}")
+    
+    st.markdown("---")
+    st.subheader("Evaluate Model (CLI - Placeholder)")
+    # This would require a separate 'evaluate' CLI command and a way to reference the trained model
+    st.info("To evaluate a model trained via CLI, you would typically use an 'evaluate' CLI command, passing a config that points to the trained model and test data.")
+    if st.button("Evaluate Model via CLI (Placeholder)", key="eval_model_cli_btn"):
+        try:
+            model_path_placeholder = f"models/{st.session_state.selected_ticker}_{st.session_state.selected_model_type_tab3.lower()}_gui_cli_model..." # Needs correct extension
+            scaler_path_placeholder = f"models/{st.session_state.selected_ticker}_{st.session_state.selected_model_type_tab3.lower()}_gui_cli_scaler.pkl" if st.session_state.selected_model_type_tab3 in ["LSTM", "CNN-LSTM", "Transformer"] else None
+            
+            eval_params = EvaluateModelConfig(
+                model_path=model_path_placeholder, # This expects a file, will fail if not existing. For CLI stub, allow string.
+                scaler_path=scaler_path_placeholder, # Same, expects file.
+                test_data_path="path/to/test_features_with_target.csv", # Placeholder
+                metrics_output_json_path="evaluation_metrics_gui.json"
+            )
+            config_payload_eval = eval_params.model_dump(mode='json')
+        except Exception as e_pydantic:
+            st.error(f"Error creating EvaluateModelConfig: {e_pydantic}")
+            # To make this work for CLI stub where files don't exist yet, change FilePath to str in Pydantic model or create dummy files.
+            # For now, we'll let it potentially show an error if paths are validated strictly.
+            # A better approach for stubs: use string types in Pydantic models for paths that are outputs of previous steps.
+            st.warning("Note: Path validation for model/scaler might cause errors if files don't exist. This is a placeholder.")
+            # Fallback to dict if Pydantic model creation fails for placeholder.
+            config_payload_eval = {
+                "model_path": model_path_placeholder,
+                "scaler_path": scaler_path_placeholder,
+                "test_data_path": "path/to/test_features_with_target.csv",
+                "metrics_output_json_path": "evaluation_metrics_gui.json"
+            }
 
-                    if st.button(f"Train {model_key_selected} Model", key=f"train_{model_key_selected}_final_final_btn"):
-                        st.session_state.trained_model_info[model_key_selected] = {}
-                        with st.spinner(f"Training {model_key_selected}... (This can take a while)"):
-                            try:
-                                train_func = getattr(modeling, f"train_{model_key_selected.lower().replace('-', '')}", None)
-                                # Default model_params from modeling.py are used by passing None or {}
-                                model, scaler = train_func(X_train.copy(), y_train.copy(), sequence_length=sequence_length_dl, fit_params=fit_params_dl) 
-                                st.session_state.trained_model_info[model_key_selected].update({'model': model, 'scaler': scaler, 'sequence_length': sequence_length_dl, 'feature_columns': list(X_train.columns), 'X_test': X_test, 'y_test': y_test})
-                                st.success(f"{model_key_selected} trained!")
-                            except Exception as e: st.error(f"Error: {e}"); st.session_state.trained_model_info.pop(model_key_selected, None)
-                    
-                    if st.session_state.get('trained_model_info', {}).get(model_key_selected, {}).get('model'):
-                        st.markdown(f"#### Evaluation: {model_key_selected}")
-                        info = st.session_state.trained_model_info[model_key_selected]
-                        model_eval, scaler_eval, seq_len_eval = info['model'], info['scaler'], info['sequence_length']
-                        X_test_eval, y_test_eval = info['X_test'][info['feature_columns']], info['y_test'] # Ensure X_test_eval uses correct columns
-                        
-                        if 'y_pred_class' not in info or 'y_pred_proba' not in info:
-                            with st.spinner("Generating predictions..."):
-                                predict_func = getattr(modeling, f"predict_{model_key_selected.lower().replace('-', '')}", None)
-                                info['y_pred_class'], info['y_pred_proba'] = predict_func(model_eval, X_test_eval.copy(), scaler_eval, seq_len_eval)
-                        
-                        y_pred_class_dl = info['y_pred_class']
-                        y_pred_proba_dl = info['y_pred_proba']
-                        
-                        if len(y_pred_class_dl) > 0:
-                            y_test_dl_aligned = y_test_eval.iloc[len(y_test_eval) - len(y_pred_class_dl):]
-                            st.text(f"Accuracy: {accuracy_score(y_test_dl_aligned, y_pred_class_dl):.4f}")
-                            st.text_area("Report:", classification_report(y_test_dl_aligned, y_pred_class_dl, zero_division=0), height=200, key=f"{model_key_selected}_report_final_final")
-                            col1, col2 = st.columns(2)
-                            with col1: fig, ax = plt.subplots(); plot_roc_auc(y_test_dl_aligned, y_pred_proba_dl, ax=ax, model_name=model_key_selected); st.pyplot(fig); plt.close(fig)
-                            with col2: fig, ax = plt.subplots(); plot_confusion_matrix(y_test_dl_aligned, y_pred_class_dl, ax=ax, model_name=model_key_selected); st.pyplot(fig); plt.close(fig)
-                        else: st.warning(f"No {model_key_selected} predictions to evaluate (test set too short for sequence?).")
-                        
-                        if st.button(f"Save {model_key_selected} Model & Scaler", key=f"save_{model_key_selected}_final_final_btn"):
-                            model_fn = f"{st.session_state.selected_ticker}_{model_key_selected.lower().replace('-','_')}_model.h5"
-                            scaler_fn = f"{st.session_state.selected_ticker}_{model_key_selected.lower().replace('-','_')}_scaler.pkl"
-                            utils.save_model(model_eval, model_fn, config.MODELS_DIR)
-                            utils.save_model(scaler_eval, scaler_fn, config.MODELS_DIR)
-                            st.success(f"{model_key_selected} Model and Scaler saved.")
-                else:
-                     st.info(f"All model types in this tab have been implemented.")
+        temp_config_path_eval = create_temp_config_file(config_payload_eval)
+        if temp_config_path_eval:
+            cli_command_parts_eval = ["main.py", "evaluate", "--config", temp_config_path_eval]
+            with st.spinner("Requesting model evaluation from CLI..."):
+                run_cli_command(cli_command_parts_eval)
+            try:
+                os.remove(temp_config_path_eval)
+            except Exception as e:
+                st.warning(f"Could not remove temporary config file {temp_config_path_eval}: {e}")
+
 
 with tab4: 
-    st.header("Backtesting and Visualization")
-    st.info("Backtesting controls and results will be implemented here.")
+    st.header("Backtesting and Visualization (CLI Hooks)")
+    st.info("This tab will demonstrate hooks for CLI-based backtesting.")
+
+    st.subheader("Run Backtest via CLI")
+    backtest_strategy_config_example = {
+        "long_threshold": 0.6,
+        "short_threshold": -0.4,
+        "target_percent": 0.9
+    }
+    backtest_data_config_example = {
+        "ohlcv_data_path": "path/to/ohlcv_for_backtest.csv", # Needs to be available
+        "predictions_path": "path/to/model_predictions_for_backtest.csv" # Needs to be generated by 'export' or 'predict' CLI command
+    }
+
+    if st.button("Run Backtest via CLI (Placeholder)", key="run_backtest_cli_btn"):
+        try:
+            backtest_params = BacktestConfig(
+                ohlcv_data_path="path/to/ohlcv_for_backtest_gui.csv", # Placeholder
+                predictions_path="path/to/model_predictions_for_backtest_gui.csv", # Placeholder
+                results_output_path="backtest_results_gui.json",
+                strategy_config=backtest_strategy_config_example # Already a dict
+            )
+            config_payload_backtest = backtest_params.model_dump(mode='json')
+        except Exception as e_pydantic:
+            st.error(f"Error creating BacktestConfig: {e_pydantic}")
+            config_payload_backtest = { # Fallback for placeholder
+                "ohlcv_data_path": "path/to/ohlcv_for_backtest_gui.csv",
+                "predictions_path": "path/to/model_predictions_for_backtest_gui.csv",
+                "results_output_path": "backtest_results_gui.json",
+                "strategy_config": backtest_strategy_config_example
+            }
+        temp_config_path_backtest = create_temp_config_file(config_payload_backtest)
+        if temp_config_path_backtest:
+            cli_command_parts_backtest = ["main.py", "backtest", "--config", temp_config_path_backtest]
+            with st.spinner("Requesting backtest from CLI..."):
+                run_cli_command(cli_command_parts_backtest)
+            try:
+                os.remove(temp_config_path_backtest)
+            except Exception as e:
+                st.warning(f"Could not remove temporary config file {temp_config_path_backtest}: {e}")
+    
+    st.subheader("Export Model/Predictions via CLI")
+    if st.button("Export Model via CLI (Placeholder)", key="export_model_cli_btn"):
+        try:
+            export_params = ExportConfig(
+                trained_model_path=f"models/{st.session_state.selected_ticker}_{st.session_state.selected_model_type_tab3.lower()}_gui_cli_model...", # Placeholder, needs correct extension
+                export_type="pickle", 
+                export_output_path=f"exported_models/{st.session_state.selected_ticker}_{st.session_state.selected_model_type_tab3.lower()}_gui_exported"
+            )
+            config_payload_export = export_params.model_dump(mode='json')
+        except Exception as e_pydantic:
+            st.error(f"Error creating ExportConfig: {e_pydantic}")
+            config_payload_export = { # Fallback for placeholder
+                 "trained_model_path": f"models/{st.session_state.selected_ticker}_{st.session_state.selected_model_type_tab3.lower()}_gui_cli_model...",
+                 "export_type": "pickle", 
+                 "export_output_path": f"exported_models/{st.session_state.selected_ticker}_{st.session_state.selected_model_type_tab3.lower()}_gui_exported"
+            }
+        temp_config_path_export = create_temp_config_file(config_payload_export)
+        if temp_config_path_export:
+            cli_command_parts_export = ["main.py", "export", "--config", temp_config_path_export]
+            with st.spinner("Requesting model export from CLI..."):
+                run_cli_command(cli_command_parts_export)
+            try:
+                os.remove(temp_config_path_export)
+            except Exception as e:
+                st.warning(f"Could not remove temporary config file {temp_config_path_export}: {e}")
 
 st.sidebar.markdown("---")
 st.sidebar.info("App for stock analysis and prediction.")

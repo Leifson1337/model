@@ -1,6 +1,14 @@
 # src/modeling.py
 import pandas as pd
 import numpy as np
+# from ..src.config_models import TrainModelConfig, ModelParamsConfig # Example for type hinting
+# from pydantic import validate_call # For validating inputs
+
+# TODO: Define expected input/output schemas for DataFrames (e.g., using pandera or Pydantic models for rows)
+#       Input X_train/X_test: DataFrame with features. Output y_pred/y_pred_proba: Numpy arrays.
+# TODO: Ensure consistency in serialization methods (pickle vs joblib vs specific library methods) for models and scalers.
+#       Add versioning information for models and related artifacts.
+# TODO: Log key library versions (sklearn, tensorflow, xgboost, etc.) used during training for reproducibility.
 import xgboost as xgb
 import lightgbm as lgb
 import catboost as cb
@@ -34,38 +42,66 @@ def create_predict_sequences(X_data_scaled: np.ndarray, sequence_length: int) ->
 
 # --- XGBoost ---
 def train_xgboost(X_train: pd.DataFrame, y_train: pd.Series, params: dict = None) -> xgb.XGBClassifier:
+    # TODO: Input validation for X_train, y_train (e.g., non-empty, consistent lengths, expected dtypes).
+    # TODO: Validate `params` structure if it becomes complex, or use a Pydantic model for it.
     if params is None:
         params = {'objective': 'binary:logistic', 'n_estimators': 100, 'learning_rate': 0.1, 'max_depth': 3, 'use_label_encoder': False, 'eval_metric': 'logloss'}
-    model = xgb.XGBClassifier(**params)
-    model.fit(X_train, y_train)
-    return model
+    
+    # TODO: Add try-except block for robust error handling during training.
+    try:
+        model = xgb.XGBClassifier(**params)
+        model.fit(X_train, y_train)
+        # TODO: Log training completion and key model parameters.
+        # TODO: Consider saving model metadata here or returning it (e.g., feature names used, library version).
+        return model
+    except Exception as e:
+        print(f"Error during XGBoost training: {e}")
+        # TODO: Log error and potentially raise a custom exception.
+        raise # Or return None, depending on desired fault tolerance strategy
 
 def predict_xgboost(model: xgb.XGBClassifier, X_test: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    # TODO: Input validation for X_test (e.g., features match model's expected features).
+    #       Ensure model is a trained XGBoost model.
     y_pred = model.predict(X_test)
     y_pred_proba = model.predict_proba(X_test)[:, 1]
     return y_pred, y_pred_proba
 
 # --- LightGBM ---
 def train_lightgbm(X_train: pd.DataFrame, y_train: pd.Series, params: dict = None) -> lgb.LGBMClassifier:
+    # TODO: Similar input validation and error handling as train_xgboost.
     if params is None:
         params = {'objective': 'binary', 'metric': 'binary_logloss', 'n_estimators': 100, 'learning_rate': 0.1, 'max_depth': -1, 'num_leaves': 31, 'verbose': -1}
-    model = lgb.LGBMClassifier(**params)
-    model.fit(X_train, y_train)
-    return model
+    try:
+        model = lgb.LGBMClassifier(**params)
+        model.fit(X_train, y_train)
+        return model
+    except Exception as e:
+        print(f"Error during LightGBM training: {e}")
+        raise
 
 def predict_lightgbm(model: lgb.LGBMClassifier, X_test: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    # TODO: Similar input validation as predict_xgboost.
     y_pred = model.predict(X_test)
     y_pred_proba = model.predict_proba(X_test)[:, 1]
     return y_pred, y_pred_proba
     
 # --- LSTM ---
 def train_lstm(X_train_df: pd.DataFrame, y_train_series: pd.Series, sequence_length: int, lstm_params: dict = None, fit_params: dict = None) -> tuple[Sequential, MinMaxScaler]:
+    # TODO: Input validation for X_train_df, y_train_series, sequence_length.
+    # TODO: Validate structure of lstm_params and fit_params.
+    # TODO: Add try-except for robustness during scaling, sequence creation, and model training.
+    
     scaler = MinMaxScaler()
+    # TODO: Consider saving the scaler or ensuring its parameters are part of reproducibility hash.
     X_train_scaled = scaler.fit_transform(X_train_df)
     X_train_seq, y_train_seq = create_sequences(X_train_scaled, y_train_series, sequence_length)
-    if X_train_seq.shape[0] == 0: raise ValueError("Not enough data for LSTM training sequences.")
+    
+    if X_train_seq.shape[0] == 0: 
+        # TODO: Log this error and handle it gracefully.
+        raise ValueError("Not enough data for LSTM training sequences after creating sequences.")
 
     if lstm_params is None: lstm_params = {'lstm_units': 50, 'dropout_rate': 0.2, 'dense_units_factor': 0.5}
+    # TODO: Log model architecture details if building dynamically.
     model = Sequential([
         LSTM(lstm_params['lstm_units'], input_shape=(sequence_length, X_train_seq.shape[2]), return_sequences=False),
         Dropout(lstm_params['dropout_rate']),
@@ -78,15 +114,27 @@ def train_lstm(X_train_df: pd.DataFrame, y_train_series: pd.Series, sequence_len
     return model, scaler
 
 def predict_lstm(model: Sequential, X_test_df: pd.DataFrame, scaler: MinMaxScaler, sequence_length: int) -> tuple[np.ndarray, np.ndarray]:
-    X_test_scaled = scaler.transform(X_test_df)
-    X_test_seq_np = create_predict_sequences(X_test_scaled, sequence_length)
-    if X_test_seq_np.shape[0] == 0: return np.array([]), np.array([])
-    y_pred_proba = model.predict(X_test_seq_np)
+    # TODO: Input validation (X_test_df structure, model type, scaler type).
+    # TODO: Ensure feature names/order for X_test_df match what scaler was fit on.
+    
+    try:
+        X_test_scaled = scaler.transform(X_test_df)
+        X_test_seq_np = create_predict_sequences(X_test_scaled, sequence_length)
+        if X_test_seq_np.shape[0] == 0: 
+            print("Warning: Not enough data for LSTM prediction sequences.")
+            return np.array([]), np.array([])
+        y_pred_proba = model.predict(X_test_seq_np)
+    except Exception as e:
+        print(f"Error during LSTM prediction: {e}")
+        # TODO: Log error and handle gracefully.
+        return np.array([]), np.array([]) # Return empty arrays on failure
+        
     y_pred = (y_pred_proba > 0.5).astype(int)
     return y_pred.flatten(), y_pred_proba.flatten()
 
 # --- CNN-LSTM ---
 def train_cnnlstm(X_train_df: pd.DataFrame, y_train_series: pd.Series, sequence_length: int, cnnlstm_params: dict = None, fit_params: dict = None) -> tuple[Sequential, MinMaxScaler]:
+    # TODO: Similar validation, error handling, and metadata considerations as train_lstm.
     scaler = MinMaxScaler()
     X_train_scaled = scaler.fit_transform(X_train_df)
     X_train_seq, y_train_seq = create_sequences(X_train_scaled, y_train_series, sequence_length)
@@ -97,7 +145,7 @@ def train_cnnlstm(X_train_df: pd.DataFrame, y_train_series: pd.Series, sequence_
             'filters': 64, 'kernel_size': 3, 'pool_size': 2,
             'lstm_units': 50, 'dropout_rate': 0.2, 'dense_units_factor': 0.5
         }
-    
+    # TODO: Log model architecture.
     model = Sequential([
         Conv1D(filters=cnnlstm_params['filters'], kernel_size=cnnlstm_params['kernel_size'], activation='relu', input_shape=(sequence_length, X_train_seq.shape[2])),
         MaxPooling1D(pool_size=cnnlstm_params['pool_size']),
@@ -112,10 +160,17 @@ def train_cnnlstm(X_train_df: pd.DataFrame, y_train_series: pd.Series, sequence_
     return model, scaler
 
 def predict_cnnlstm(model: Sequential, X_test_df: pd.DataFrame, scaler: MinMaxScaler, sequence_length: int) -> tuple[np.ndarray, np.ndarray]:
-    X_test_scaled = scaler.transform(X_test_df)
-    X_test_seq_np = create_predict_sequences(X_test_scaled, sequence_length)
-    if X_test_seq_np.shape[0] == 0: return np.array([]), np.array([])
-    y_pred_proba = model.predict(X_test_seq_np)
+    # TODO: Similar validation and error handling as predict_lstm.
+    try:
+        X_test_scaled = scaler.transform(X_test_df)
+        X_test_seq_np = create_predict_sequences(X_test_scaled, sequence_length)
+        if X_test_seq_np.shape[0] == 0: 
+            print("Warning: Not enough data for CNN-LSTM prediction sequences.")
+            return np.array([]), np.array([])
+        y_pred_proba = model.predict(X_test_seq_np)
+    except Exception as e:
+        print(f"Error during CNN-LSTM prediction: {e}")
+        return np.array([]), np.array([])
     y_pred = (y_pred_proba > 0.5).astype(int)
     return y_pred.flatten(), y_pred_proba.flatten()
 
@@ -188,6 +243,7 @@ class TransformerEncoderBlock(tf.keras.layers.Layer):
 
 # --- Transformer Model ---
 def train_transformer(X_train_df: pd.DataFrame, y_train_series: pd.Series, sequence_length: int, transformer_params: dict = None, fit_params: dict = None) -> tuple[Model, MinMaxScaler]:
+    # TODO: Similar validation, error handling, and metadata as train_lstm/cnnlstm.
     scaler = MinMaxScaler()
     X_train_scaled = scaler.fit_transform(X_train_df)
     X_train_seq, y_train_seq = create_sequences(X_train_scaled, y_train_series, sequence_length)
@@ -196,59 +252,88 @@ def train_transformer(X_train_df: pd.DataFrame, y_train_series: pd.Series, seque
     num_features = X_train_seq.shape[2]
     if transformer_params is None:
         transformer_params = {
-            'embed_dim': num_features, # Dimension of embeddings (must match num_features if no projection)
+            'embed_dim': num_features, 
             'num_heads': 2, 'ff_dim': 32, 'num_transformer_blocks': 1, 'dropout_rate': 0.1
         }
+    
+    # TODO: Log transformer architecture details.
     # Ensure embed_dim matches input feature dimension if not using a separate projection layer
-    if transformer_params['embed_dim'] != num_features:
-        print(f"Warning: Transformer embed_dim ({transformer_params['embed_dim']}) "
-              f"differs from input features ({num_features}). This might lead to issues "
-              "if not handled by a projection layer or if PositionalEncoding assumes match.")
-        # For this simplified version, we'll proceed, but typically a Dense layer would project X_train_seq features to embed_dim.
+    if transformer_params.get('embed_dim', num_features) != num_features:
+        print(f"Warning: Transformer embed_dim ({transformer_params.get('embed_dim')}) "
+              f"differs from input features ({num_features}). This might lead to issues if not handled correctly.")
+        # A Dense projection layer would typically be added if embed_dim != num_features.
+        # For this stub, we assume embed_dim will be set to num_features or handled by user if different.
+        # If embed_dim is not provided, default to num_features.
+        current_embed_dim = transformer_params.get('embed_dim', num_features)
+    else:
+        current_embed_dim = num_features
+
 
     inputs = Input(shape=(sequence_length, num_features))
     x = inputs
-    # Optional: Add a Dense layer here to project num_features to embed_dim if they differ
-    # x = Dense(transformer_params['embed_dim'], activation='relu')(x) # Example projection
-
-    # Add Positional Encoding if embed_dim matches feature dim, or after projection
-    # Using sequence_length for position arg of PositionalEncoding
-    if transformer_params['embed_dim'] == num_features :
-         x = PositionalEncoding(position=sequence_length, d_model=transformer_params['embed_dim'])(x)
     
-    for _ in range(transformer_params['num_transformer_blocks']):
-        x = TransformerEncoderBlock(transformer_params['embed_dim'], transformer_params['num_heads'], transformer_params['ff_dim'], transformer_params['dropout_rate'])(x)
+    # Optional: Projection layer if embed_dim is different from num_features
+    # if current_embed_dim != num_features:
+    #    x = Dense(current_embed_dim, activation='relu')(x)
+
+    # Add Positional Encoding. It should operate on current_embed_dim.
+    x = PositionalEncoding(position=sequence_length, d_model=current_embed_dim)(x)
+    
+    for _ in range(transformer_params.get('num_transformer_blocks', 1)):
+        x = TransformerEncoderBlock(
+            embed_dim=current_embed_dim, 
+            num_heads=transformer_params.get('num_heads', 2), 
+            ff_dim=transformer_params.get('ff_dim', 32), 
+            rate=transformer_params.get('dropout_rate', 0.1)
+        )(x)
     
     x = GlobalAveragePooling1D()(x)
-    x = Dropout(transformer_params['dropout_rate'])(x)
+    x = Dropout(transformer_params.get('dropout_rate', 0.1))(x)
     outputs = Dense(1, activation="sigmoid")(x)
     
     model = Model(inputs=inputs, outputs=outputs)
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy', 'AUC'])
     if fit_params is None: fit_params = {'epochs': 50, 'batch_size': 32, 'validation_split': 0.1, 'verbose': 1}
-    model.fit(X_train_seq, y_train_seq, **fit_params)
+    
+    try:
+        model.fit(X_train_seq, y_train_seq, **fit_params)
+    except Exception as e:
+        print(f"Error during Transformer model training: {e}")
+        raise
     return model, scaler
 
 def predict_transformer(model: Model, X_test_df: pd.DataFrame, scaler: MinMaxScaler, sequence_length: int) -> tuple[np.ndarray, np.ndarray]:
-    X_test_scaled = scaler.transform(X_test_df)
-    X_test_seq_np = create_predict_sequences(X_test_scaled, sequence_length)
-    if X_test_seq_np.shape[0] == 0: return np.array([]), np.array([])
-    y_pred_proba = model.predict(X_test_seq_np)
+    # TODO: Similar validation and error handling as predict_lstm.
+    try:
+        X_test_scaled = scaler.transform(X_test_df)
+        X_test_seq_np = create_predict_sequences(X_test_scaled, sequence_length)
+        if X_test_seq_np.shape[0] == 0: 
+            print("Warning: Not enough data for Transformer prediction sequences.")
+            return np.array([]), np.array([])
+        y_pred_proba = model.predict(X_test_seq_np)
+    except Exception as e:
+        print(f"Error during Transformer prediction: {e}")
+        return np.array([]), np.array([])
     y_pred = (y_pred_proba > 0.5).astype(int)
     return y_pred.flatten(), y_pred_proba.flatten()
 
 # --- CatBoost ---
 def train_catboost(X_train: pd.DataFrame, y_train: pd.Series, params: dict = None, cat_features: list = None) -> cb.CatBoostClassifier:
+    # TODO: Similar input validation and error handling.
     if params is None: params = {'iterations': 100, 'learning_rate': 0.1, 'depth': 6, 'loss_function': 'Logloss', 'eval_metric': 'AUC', 'verbose': 0}
-    if cat_features is None: cat_features = [col for col in X_train.columns if X_train[col].dtype in ['object', 'category']]
-    if not cat_features: cat_features = None
-    model = cb.CatBoostClassifier(**params)
-    # Note: CatBoost early stopping needs an eval_set passed to fit()
-    # model.fit(X_train, y_train, cat_features=cat_features, early_stopping_rounds=10 if 'eval_set' in params else None)
-    model.fit(X_train, y_train, cat_features=cat_features) # Simplified fit without eval_set for now
-    return model
+    if cat_features is None: cat_features = [col for col in X_train.columns if X_train[col].dtype.name in ['object', 'category', 'string']] # Added 'string'
+    if not cat_features: cat_features = None # Ensure it's None if list is empty
+    
+    try:
+        model = cb.CatBoostClassifier(**params)
+        model.fit(X_train, y_train, cat_features=cat_features)
+        return model
+    except Exception as e:
+        print(f"Error during CatBoost training: {e}")
+        raise
 
 def predict_catboost(model: cb.CatBoostClassifier, X_test: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    # TODO: Similar input validation.
     y_pred = model.predict(X_test)
     y_pred_proba = model.predict_proba(X_test)[:, 1]
     return y_pred, y_pred_proba

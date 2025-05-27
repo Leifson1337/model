@@ -1,6 +1,8 @@
 # src/utils.py
 import logging
 import os
+# from ..src.config_models import GlobalAppConfig # Example for type hinting if setup_logging uses it.
+# from pydantic import validate_call # For validating inputs
 import joblib
 import tensorflow as tf # For saving/loading Keras models
 from src import config # Assuming config.py is in the same directory or src is in PYTHONPATH
@@ -11,76 +13,135 @@ import lightgbm as lgb
 
 def setup_logging():
     '''Configures logging for the application.'''
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) 
-    abs_logs_dir = os.path.join(project_root, config.LOGS_DIR)
-    # Ensure the filename part of LOG_FILE is extracted if LOG_FILE itself is a full path
-    log_filename = os.path.basename(config.LOG_FILE) 
-    abs_log_file = os.path.join(abs_logs_dir, log_filename)
-
-    os.makedirs(abs_logs_dir, exist_ok=True)
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
-    # Avoid adding handlers multiple times if called repeatedly
-    logger = logging.getLogger()
-    if not logger.handlers: # Check if handlers are already configured
+    # TODO: These paths and level should ideally come from a validated Pydantic config (e.g., GlobalAppConfig.paths.logs_dir)
+    #       rather than directly from src.config module, for consistency and validation.
+    #       For now, we use src.config but acknowledge this could be improved.
+    logs_dir_from_config = getattr(config, 'LOGS_DIR', 'logs/') # Default if not in src.config
+    log_file_from_config = getattr(config, 'LOG_FILE', os.path.join(logs_dir_from_config, 'app.log'))
+    log_level_from_config = getattr(config, 'LOG_LEVEL', 'INFO').upper()
+
+    abs_logs_dir = os.path.join(project_root, logs_dir_from_config)
+    # Ensure the filename part of LOG_FILE is extracted if log_file_from_config itself is a full path
+    log_filename_only = os.path.basename(log_file_from_config) 
+    abs_log_file = os.path.join(abs_logs_dir, log_filename_only)
+
+    try:
+        os.makedirs(abs_logs_dir, exist_ok=True)
+    except OSError as e:
+        # This might happen in restricted environments. Fallback or log to stderr.
+        print(f"Warning: Could not create logs directory {abs_logs_dir}: {e}. Logging to stdout only.", file=sys.stderr)
+        # Configure basic logging to stdout if directory creation fails
         logging.basicConfig(
-            level=getattr(logging, config.LOG_LEVEL.upper(), logging.INFO),
+            level=getattr(logging, log_level_from_config, logging.INFO),
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S',
+            handlers=[logging.StreamHandler()]
+        )
+        return
+
+    # Avoid adding handlers multiple times if called repeatedly
+    root_logger = logging.getLogger()
+    if not root_logger.hasHandlers() or len(root_logger.handlers) == 0 : # Check if handlers are already configured
+        # TODO: Consider more advanced logging configurations (e.g., rotating file handlers, structured logging).
+        logging.basicConfig(
+            level=getattr(logging, log_level_from_config, logging.INFO),
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S',
             handlers=[
-                logging.FileHandler(abs_log_file),
+                logging.FileHandler(abs_log_file), # TODO: Add error handling for FileHandler instantiation
                 logging.StreamHandler()
             ]
         )
+        logging.info(f"Logging configured. Log file: {abs_log_file}, Level: {log_level_from_config}")
+    else:
+        logging.info("Logging already configured.")
+
 
 def save_model(model, model_name: str, models_dir: str = None):
+    # TODO: Input validation for model_name (e.g., valid filename characters, expected extension).
+    # TODO: `models_dir` should ideally come from a validated config (e.g., GlobalAppConfig.paths.model_registry_path).
     """
     Saves a trained model to the specified directory.
     Handles scikit-learn-like models (joblib), XGBoost, LightGBM, and Keras/TensorFlow models.
+    Ensures model versioning and consistent serialization.
 
     Args:
-        model: The trained model object.
+        model: The trained model object. # TODO: Add type hints for common model types.
         model_name: Filename for the model (e.g., 'xgboost_v1.pkl' or 'lstm_model.h5').
+                    # TODO: Consider standardizing model naming convention (e.g., include version, timestamp).
         models_dir: Directory to save the model. Defaults to config.MODELS_DIR.
+                    # TODO: This should come from a validated Pydantic config.
     """
+    # TODO: Cross-module compatibility: Emphasize consistent serialization (e.g., always use joblib for sklearn-like,
+    #       native methods for TF/XGB/LGB if they provide better guarantees or cross-language support).
+    #       Document versioning strategy for models (e.g., model_name includes version, or metadata file tracks it).
+
     if models_dir is None:
-        models_dir = config.MODELS_DIR
+        models_dir = getattr(config, 'MODELS_DIR', 'models/') # Default if not in src.config
     
-    # Ensure models_dir is an absolute path relative to project root for consistency
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # src -> project_root
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) 
     abs_models_dir = os.path.join(project_root, models_dir)
     
-    os.makedirs(abs_models_dir, exist_ok=True)
+    try:
+        os.makedirs(abs_models_dir, exist_ok=True)
+    except OSError as e:
+        logging.error(f"Could not create models directory {abs_models_dir}: {e}. Cannot save model.")
+        # TODO: Raise a custom exception or handle more gracefully depending on pipeline requirements.
+        raise
+        
     model_path = os.path.join(abs_models_dir, model_name)
     
+    # TODO: Add fault tolerance: try-except for each save operation, log errors.
+    # TODO: Save model metadata alongside the model using src.metadata_utils.generate_model_metadata().
+    #       This metadata should include model type, parameters, training data reference, performance metrics, etc.
+    #       Example:
+    #       metadata_path = generate_model_metadata(
+    #           model_filepath=model_path,
+    #           metrics={"accuracy": 0.85, ...}, # From evaluation step
+    #           feature_config={"features_used": ["sma_20", ...], ...}, # From feature engineering config
+    #           training_config_obj=model_training_config_object # The Pydantic config obj for training
+    #       )
+    #       logging.info(f"Metadata for {model_name} saved to {metadata_path}")
+
     try:
-        if isinstance(model, tf.keras.Model): # TensorFlow/Keras model
-            model.save(model_path) # .h5 or SavedModel format based on model_name extension
+        if isinstance(model, tf.keras.Model): 
+            # Keras models: .h5 (legacy), .keras (new preferred), or SavedModel directory format.
+            # Using .keras extension for new preferred format.
+            # If model_name doesn't specify, choose one. For SavedModel, model_name should be a directory name.
+            if not model_name.endswith((".h5", ".keras")):
+                 # Assume SavedModel format if no Keras-specific extension; model_path should be a dir.
+                 # Or default to .keras: model_path_to_save = model_path + ".keras"
+                 pass # Current logic uses model_path as is.
+            model.save(model_path) 
             logging.info(f"Keras model '{model_name}' saved to {model_path}")
-        elif isinstance(model, xgb.XGBModel): # XGBoost model
-            # XGBoost recommends its own save_model for full fidelity, or joblib for scikit-learn wrapper
-            model.save_model(model_path) # Saves in XGBoost binary format if model_name ends with .json, .ubj, etc.
-                                         # For .pkl, it might use joblib. Let's be explicit with joblib for pkl.
-            # if model_name.endswith(".pkl"):
-            #    joblib.dump(model, model_path)
-            # else:
-            #    model.save_model(model_path) # Native format
-            logging.info(f"XGBoost model '{model_name}' saved to {model_path}")
-        elif isinstance(model, lgb.LGBMModel): # LightGBM model
-            # LightGBM also has native save_model and can be pickled
-            model.booster_.save_model(model_path) # Saves in text format by default, or use .txt extension explicitly
-            # if model_name.endswith(".pkl"):
-            #    joblib.dump(model, model_path)
-            # else:
-            #    model.booster_.save_model(model_path) # Native format
-            logging.info(f"LightGBM model '{model_name}' saved to {model_path}")
-        else: # Default to joblib for other scikit-learn compatible models
+        elif isinstance(model, xgb.XGBModel): 
+            # Use joblib for scikit-learn wrapper of XGBoost for consistency with other sklearn-like models.
+            # Native format (.ubj or .json) can be used if cross-language compatibility or specific features are needed.
+            if model_name.endswith((".ubj", ".json")):
+                model.save_model(model_path) # Native format
+                logging.info(f"XGBoost model '{model_name}' saved in native format to {model_path}")
+            else: # Default to joblib for .pkl or unspecified extensions for XGB wrapper
+                joblib.dump(model, model_path)
+                logging.info(f"XGBoost model (sklearn wrapper) '{model_name}' saved using joblib to {model_path}")
+        elif isinstance(model, lgb.LGBMModel): 
+            if model_name.endswith(".txt"): # Native LightGBM text format
+                model.booster_.save_model(model_path) 
+                logging.info(f"LightGBM model '{model_name}' saved in native text format to {model_path}")
+            else: # Default to joblib for .pkl or unspecified for LGBM wrapper
+                joblib.dump(model, model_path)
+                logging.info(f"LightGBM model (sklearn wrapper) '{model_name}' saved using joblib to {model_path}")
+        else: 
             joblib.dump(model, model_path)
             logging.info(f"Model '{model_name}' saved using joblib to {model_path}")
     except Exception as e:
         logging.error(f"Error saving model '{model_name}' to {model_path}: {e}")
+        # TODO: Consider specific error handling for different model types or file system issues.
         raise
 
 def load_model(model_name: str, models_dir: str = None):
+    # TODO: Similar input validation and config sourcing for models_dir as in save_model.
     """
     Loads a trained model from the specified directory.
     Handles scikit-learn-like models (joblib), XGBoost, LightGBM, and Keras/TensorFlow models.

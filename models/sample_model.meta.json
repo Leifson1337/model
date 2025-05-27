@@ -1,0 +1,26 @@
+{
+    "model_filepath": "/app/models/sample_model.joblib",
+    "timestamp": "2025-05-27T20:24:33.144688+00:00",
+    "model_hash": "f05469a53ee0d61d91112ed3f692a12b69d00e32d4bf46bd5ebbb4261b562950",
+    "metrics": {
+        "accuracy": 0.95,
+        "f1_score": 0.92,
+        "precision": 0.9,
+        "recall": 0.94
+    },
+    "feature_config": {
+        "features_used": [
+            "age",
+            "income",
+            "education_level"
+        ],
+        "preprocessing_steps": [
+            "scaling_standard",
+            "one_hot_encode_categorical"
+        ],
+        "hyperparameters_for_feature_selection": {
+            "k_best": 10
+        }
+    },
+    "reproducibility_hash": "custom_repro_hash_for_sample_model_v1.0"
+}

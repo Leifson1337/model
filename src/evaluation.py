@@ -1,14 +1,19 @@
 # src/evaluation.py
 import matplotlib.pyplot as plt
 from sklearn.metrics import RocCurveDisplay, ConfusionMatrixDisplay, roc_auc_score
+# from ..src.config_models import EvaluateModelConfig # Example for type hinting
+# from pydantic import validate_call # For validating inputs
+
+# TODO: Define expected input/output schemas for data (y_true, y_pred_proba, y_pred).
+#       Ensure consistency with how predictions are formatted by the modeling module.
 
 def plot_roc_auc(y_true, y_pred_proba, ax=None, model_name: str = "", **kwargs):
     """
     Plots the ROC curve and displays AUC.
 
     Args:
-        y_true: True binary labels.
-        y_pred_proba: Probabilities of the positive class.
+        y_true: True binary labels. # TODO: Validate type and shape.
+        y_pred_proba: Probabilities of the positive class. # TODO: Validate type and shape.
         ax: Matplotlib Axes object to plot on. If None, creates a new one.
         model_name: Name of the model for the plot title.
         **kwargs: Additional arguments passed to RocCurveDisplay.from_predictions.
@@ -16,24 +21,29 @@ def plot_roc_auc(y_true, y_pred_proba, ax=None, model_name: str = "", **kwargs):
     Returns:
         Matplotlib Axes object.
     """
+    # TODO: Add try-except for robustness, e.g., if y_true/y_pred_proba are not suitable for ROC.
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 6))
     
     try:
         # Use model_name for the name parameter in from_predictions for legend if needed elsewhere
         RocCurveDisplay.from_predictions(y_true, y_pred_proba, ax=ax, name=model_name, **kwargs)
-        auc = roc_auc_score(y_true, y_pred_proba)
+        auc = roc_auc_score(y_true, y_pred_proba) # This might fail if inputs are bad
         title = f"ROC Curve (AUC = {auc:.2f})"
         if model_name:
             title = f"{model_name} - {title}"
         ax.set_title(title)
-    except Exception as e:
-        ax.text(0.5, 0.5, f"Could not plot ROC: {e}", ha='center', va='center')
+    except ValueError as ve: # More specific error for roc_auc_score or from_predictions issues
+        ax.text(0.5, 0.5, f"ROC Plot Error: {ve}", ha='center', va='center', wrap=True)
+        print(f"ValueError plotting ROC for {model_name}: {ve}")
+    except Exception as e: # Generic catch-all
+        ax.text(0.5, 0.5, f"Could not plot ROC: {e}", ha='center', va='center', wrap=True)
         print(f"Error plotting ROC for {model_name}: {e}")
         
     return ax
 
 def plot_confusion_matrix(y_true, y_pred, ax=None, class_names=None, model_name: str = "", **kwargs):
+    # TODO: Similar input validation and error handling for plot_confusion_matrix.
     """
     Plots the confusion matrix.
 

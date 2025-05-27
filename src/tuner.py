@@ -1,6 +1,12 @@
 # src/tuner.py
 import optuna
 import numpy as np
+# from ..src.config_models import TrainModelConfig # Example for type hinting, if using parts of it
+# from pydantic import validate_call # For validating inputs
+
+# TODO: Define expected input/output schemas for DataFrames/Numpy arrays.
+# TODO: Log key library versions (optuna, numpy, pandas, model-specific libs) for reproducibility.
+# TODO: Consider how Optuna study persistence (storage_path) interacts with overall pipeline artifact management.
 import pandas as pd
 import os # For path manipulation in run_tuning storage_path
 
@@ -28,9 +34,11 @@ from src.modeling import PositionalEncoding, TransformerEncoderBlock
 
 def objective_xgboost(trial, X: pd.DataFrame, y: pd.Series, cv_splitter: TimeSeriesSplit, eval_metric: str = 'accuracy') -> float:
     """Objective function for XGBoost hyperparameter optimization."""
+    # TODO: Validate inputs X, y, cv_splitter, and eval_metric.
+    # TODO: Add try-except block for robustness during model training and evaluation within the trial.
     params = {
         'objective': 'binary:logistic', 'eval_metric': 'logloss', 'use_label_encoder': False,
-        'n_estimators': trial.suggest_int('n_estimators', 100, 1000, step=100),
+        'n_estimators': trial.suggest_int('n_estimators', 100, 1000, step=100), # TODO: Make ranges configurable
         'learning_rate': trial.suggest_float('learning_rate', 1e-3, 0.3, log=True),
         'max_depth': trial.suggest_int('max_depth', 3, 10),
         'subsample': trial.suggest_float('subsample', 0.5, 1.0),

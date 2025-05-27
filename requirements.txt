@@ -1,19 +1,24 @@
-yfinance
-pandas
-ta
-xgboost
-scikit-learn
-matplotlib
-tensorflow
-optuna
-backtrader
-lightgbm
-catboost
-fbprophet
-shap
-newsapi-python
-transformers sentencia 0.2.2
-torch torchvision torchaudio # Added torch as a common backend for transformers
+yfinance>=0.1.63
+pandas>=1.0.0
+ta>=0.7.0
+xgboost>=1.5.0
+scikit-learn>=1.0.0
+matplotlib>=3.3.0 # Added back for gui.py
+tensorflow>=2.8.0 # Keep, as it might be used for core model tasks without GUI
+optuna>=2.10.0
+backtrader>=1.9
+lightgbm>=3.3.0
+catboost>=1.0.0
+# fbprophet # Removed due to potential build complexities for headless
+# shap # Removed as primarily for visualization/explanation
+newsapi-python>=0.2.6
+transformers>=4.15.0
 # sentencepiece # Often needed for tokenizers, can be added if specific model requires it
 # sacremoses # Also sometimes needed for tokenizers
-streamlit
+streamlit>=1.0.0 # Added back for gui.py
+click>=8.0.0 # Added for main.py CLI
+torch>=1.10.0 # Keeping torch as transformers often depend on it.
+# torchvision # Removed, usually for image data augmentation/models
+# torchaudio # Removed, usually for audio data augmentation/models
+pydantic>=1.8.2 # Added as it's used for config models
+# Ensure pydantic is here, it was installed in step 7 but might not be in reqs.txt yet.

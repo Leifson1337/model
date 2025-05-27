@@ -1,0 +1,67 @@
+version: '3.8' # Specify docker-compose version
+
+services:
+  app:
+    build:
+      context: . # Use the current directory as the build context
+      dockerfile: Dockerfile # Specify the Dockerfile name
+    container_name: qlop_app_container
+    # image: qlop_app_image # Optionally specify image name if you want to tag it during build via compose
+    
+    # Environment variables can be passed from .env file or defined here
+    # env_file:
+    #   - .env 
+    # environment:
+    #   - PYTHONUNBUFFERED=1 # Ensures print statements appear without delay
+    #   - APP_ENV=development # Example environment variable
+
+    # Volumes for development: Mount current directory to /app in container
+    # This allows code changes to be reflected without rebuilding the image.
+    # For production, you might not use host-mounted volumes for code.
+    volumes:
+      - .:/app  # Mounts the project root on the host to /app in the container
+      # Example: Mount specific config files if they are not copied by Dockerfile or need to persist
+      # - ./config/prod.json:/app/config/prod.json:ro # Read-only mount for prod config
+      # Example: Mount data and models directories if they are large and managed outside the container
+      # - ./data:/app/data 
+      # - ./models:/app/models
+
+    # Ports: Expose ports if the application runs a web service (e.g., API or Streamlit GUI)
+    # For Streamlit GUI (if running it via docker-compose):
+    # ports:
+    #   - "8501:8501" 
+    # For an API (e.g., FastAPI on port 8000):
+    # ports:
+    #   - "8000:8000"
+
+    # Entrypoint and Command:
+    # The Dockerfile already has ENTRYPOINT ["python", "main.py"] and CMD ["--help"]
+    # If using entrypoint.sh, Dockerfile's ENTRYPOINT will be overridden or complemented by this.
+    # entrypoint: ["/app/entrypoint.sh"] # Assuming entrypoint.sh is in project root and copied to /app
+    
+    # Default command to run if not specified in Dockerfile's CMD or overridden here.
+    # For example, to run the Streamlit app by default if this compose file is for GUI:
+    # command: streamlit run gui.py --server.port 8501 --server.address 0.0.0.0
+    # If entrypoint.sh is used, command here is passed as arguments to entrypoint.sh
+    # command: ["python", "main.py", "--help"] # Default, matches Dockerfile's CMD
+
+    # For development, you might want to keep the container running
+    # tty: true # Keeps the container running, useful for exec-ing into it
+    # stdin_open: true
+
+    # Healthcheck (optional, example for a web service)
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8000/health"] # Adjust for your app
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 30s
+
+networks: # Define networks if needed for multi-container setups
+  default:
+    driver: bridge
+
+# Named volumes (optional, for persistent data if not using host mounts)
+# volumes:
+#   app_data:
+#   app_models:

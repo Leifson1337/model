@@ -1,0 +1,46 @@
+# Ignore environment variables file
+.env
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore IDE/editor specific files
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Ignore virtual environment directories
+venv/
+env/
+.venv/
+
+# Ignore build artifacts
+build/
+dist/
+*.egg-info/
+
+# Ignore testing artifacts (if any not in tests/ dir)
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Ignore data files (if large or sensitive, depends on project policy)
+# data/raw/
+# data/processed/
+
+# Ignore model files (if large)
+# models/*.joblib
+# models/*.pkl
+
+# Ignore log files
+logs/*.log
+# Keep the directory, but ignore its contents (except .gitkeep if you use that pattern)
+logs/*
+!logs/.gitkeep
+
+# Ignore notebook checkpoints
+.ipynb_checkpoints/

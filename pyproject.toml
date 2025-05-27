@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+backend-path = ["."] # Specifies that the backend is in the current directory
+# Note: some linters/tools might prefer `backend-path = ["."]` if setup.py is in root.
+# setuptools.build_meta is the backend for setuptools.
+# If using other backends like flit or poetry, this section would differ.
+
+[project]
+name = "qlop_project" # Corresponds to setup.py's name
+version = "0.1.0" # Can be dynamic, see setuptools_scm or reading from VERSION file for advanced cases
+description = "Quantitative Leverage Opportunity Predictor (QLOP) - an advanced stock analysis tool."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT License"} # Or {file = "LICENSE"} if you have a LICENSE file
+authors = [
+    {name = "Your Name / Organization Name", email = "your.email@example.com"}
+]
+keywords = ["finance", "quantitative", "stock market", "machine learning", "algorithmic trading"]
+
+classifiers=[
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Operating System :: OS Independent",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Dependencies would be listed here if not using setup.py's install_requires
+# For now, setup.py handles dependencies.
+# Example:
+# dependencies = [
+#   "pandas>=1.2.0,<2.0.0",
+#   "pydantic>=1.8",
+# ]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/yourrepository" # Replace
+Documentation = "https://github.com/yourusername/yourrepository/blob/main/README.md" # Replace
+Repository = "https://github.com/yourusername/yourrepository" # Replace
+# Changelog = "https://github.com/yourusername/yourrepository/blob/main/CHANGELOG.md" # If you have one
+
+[project.scripts]
+qlop-cli = "main:cli"
+
+# Optional: Define project metadata for tools like linters, formatters, etc.
+# [tool.black]
+# line-length = 88
+#
+# [tool.isort]
+# profile = "black"
+#
+# [tool.pytest.ini_options]
+# minversion = "6.0"
+# addopts = "-ra -q"
+# testpaths = [
+#     "tests",
+# ]
+#
+# [tool.mypy]
+# ignore_missing_imports = true
+# # More mypy settings...
+
+# If using setuptools_scm to get version from git tags:
+# [tool.setuptools_scm]
+# write_to = "src/_version.py" # Example: write version to a file
+#
+# Then in setup.py, you'd typically remove manual version reading
+# and setuptools would pick it up via setuptools_scm.
+# For this task, we are reading version from VERSION file manually in setup.py.

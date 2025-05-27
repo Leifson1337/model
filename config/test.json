@@ -1,0 +1,9 @@
+{
+    "environment": "test",
+    "log_level": "INFO",
+    "data_path": "data/raw/test_data.csv",
+    "model_params": {
+        "type": "LogisticRegression",
+        "C": 1.0
+    }
+}
