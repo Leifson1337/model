@@ -3,6 +3,8 @@
 
 # Project QLOP: Quantitative Leverage Opportunity Predictor
 
+**Version:** `{{VERSION}}`
+
 {{project_overview}}
 
 ---
@@ -45,7 +47,12 @@ For detailed setup instructions, please see {{setup_instructions_link}}.
 
 {{architecture_overview_link}}
 
-### Models Overview
+### Model Registry Summary
+
+{{MODEL_REGISTRY_SUMMARY}}
+
+<!-- Note: {{models_overview}} is for individual .meta.json files, distinct from registry summary -->
+### Models Overview (Individual Meta Files) 
 
 {{models_overview}}
 
@@ -55,7 +62,11 @@ For detailed setup instructions, please see {{setup_instructions_link}}.
 
 {{pipeline_status}}
 
-### Latest Evaluation Metrics (Placeholder)
+### Key Metrics Summary (Conceptual)
+
+{{KEY_METRICS_SUMMARY}}
+
+### Latest Evaluation Metrics (from logs/latest_eval_report.json)
 
 {{latest_evaluation_metrics}}
 

@@ -3,6 +3,8 @@
 
 # Project QLOP: Quantitative Leverage Opportunity Predictor
 
+**Version:** `0.1.0`
+
 # Project Title: Quantitative Leverage Opportunity Predictor (QLOP)
 
 **Brief Description:** QLOP is an advanced stock analysis and prediction tool designed to identify potential leverage opportunities in the stock market. It incorporates data ingestion, feature engineering, model training, evaluation, backtesting, and provides insights through a GUI, CLI, and eventually an API.
@@ -64,7 +66,15 @@ CLI commands could not be determined. Run `python main.py --help` manually.
 
 ## Examples
 
-[docs/sections/06_examples.md](./docs/sections/06_examples.md)
+## Examples
+
+Find detailed examples and usage scenarios in the [workflows documentation](./docs/workflows/).
+
+- **Example 1: Training an XGBoost Model**
+  - See [docs/workflows/workflow_example_1.md](./docs/workflows/workflow_example_1.md) (to be created) for a step-by-step guide on training an XGBoost model using the CLI, including configuration.
+
+(More examples will be listed here as they are documented in `docs/workflows/`.)
+
 
 ---
 
@@ -87,10 +97,13 @@ This project follows a modular architecture designed for scalability and maintai
     -   `sentiment_analysis.py`: News sentiment fetching and analysis.
     -   `fundamental_data.py`: Fetching and processing fundamental stock data.
 
-| Model File | Timestamp (UTC) | Key Metric(s) | Features Info |
-|--------------|-------------------|-----------------|---------------|
-| `sample_model_v1` | 2023-01-15T12:00:00Z | Acc: 0.950 | 3 (e.g., feat1, feat2...) |
-| `Final_README_Model_Test` | 2023-10-29T15:05:00Z | Acc: 0.890 | 2 (e.g., final_feat1, final_feat2...) |
+| Model Name / Path | Timestamp (UTC) | Key Metric(s) | Features Info |
+|---------------------|-------------------|-----------------|---------------|
+| `LSTMTest` | 2023-01-03T00:00:00Z | AUC: 0.920 | 3 features (e.g., X, Y...) |
+| `XGBoostTest` | 2023-01-01T00:00:00Z | Acc: 0.800 | 2 features (e.g., A, B...) |
+| `XGBoostTest` | 2023-01-02T00:00:00Z | Acc: 0.880 | 4 features (e.g., A, B...) |
+| `Final_README_Model_Test` | 2023-10-29T15:05:00Z | Acc: 0.890 | 2 features (e.g., final_feat1, final_feat2...) |
+| `sample_model_v1` | 2023-01-15T12:00:00Z | Acc: 0.950 | 3 features (e.g., feat1, feat2...) |
 
 -   **`main.py`**: CLI entry point using `click`.
 -   **`gui.py`**: Streamlit GUI application.
@@ -107,12 +120,28 @@ This project follows a modular architecture designed for scalability and maintai
 (A more detailed architecture diagram will be added here.)
 
 
-### Models Overview
+### Model Registry Summary
 
-| Model File | Timestamp (UTC) | Key Metric(s) | Features Info |
-|--------------|-------------------|-----------------|---------------|
-| `sample_model_v1` | 2023-01-15T12:00:00Z | Acc: 0.950 | 3 (e.g., feat1, feat2...) |
-| `Final_README_Model_Test` | 2023-10-29T15:05:00Z | Acc: 0.890 | 2 (e.g., final_feat1, final_feat2...) |
+**Model Registry Highlights:**
+-   **LSTMTest**: Latest version `v20230103000000_ghi789` (Updated: 2023-01-03T00:00:00Z, Metric: auc = 0.920)
+-   **XGBoostTest**: Latest version `v20230102000000_def456` (Updated: 2023-01-02T00:00:00Z, Metric: accuracy = 0.880)
+
+<!-- Note: | Model Name / Path | Timestamp (UTC) | Key Metric(s) | Features Info |
+|---------------------|-------------------|-----------------|---------------|
+| `LSTMTest` | 2023-01-03T00:00:00Z | AUC: 0.920 | 3 features (e.g., X, Y...) |
+| `XGBoostTest` | 2023-01-01T00:00:00Z | Acc: 0.800 | 2 features (e.g., A, B...) |
+| `XGBoostTest` | 2023-01-02T00:00:00Z | Acc: 0.880 | 4 features (e.g., A, B...) |
+| `Final_README_Model_Test` | 2023-10-29T15:05:00Z | Acc: 0.890 | 2 features (e.g., final_feat1, final_feat2...) |
+| `sample_model_v1` | 2023-01-15T12:00:00Z | Acc: 0.950 | 3 features (e.g., feat1, feat2...) | is for individual .meta.json files, distinct from registry summary -->
+### Models Overview (Individual Meta Files) 
+
+| Model Name / Path | Timestamp (UTC) | Key Metric(s) | Features Info |
+|---------------------|-------------------|-----------------|---------------|
+| `LSTMTest` | 2023-01-03T00:00:00Z | AUC: 0.920 | 3 features (e.g., X, Y...) |
+| `XGBoostTest` | 2023-01-01T00:00:00Z | Acc: 0.800 | 2 features (e.g., A, B...) |
+| `XGBoostTest` | 2023-01-02T00:00:00Z | Acc: 0.880 | 4 features (e.g., A, B...) |
+| `Final_README_Model_Test` | 2023-10-29T15:05:00Z | Acc: 0.890 | 2 features (e.g., final_feat1, final_feat2...) |
+| `sample_model_v1` | 2023-01-15T12:00:00Z | Acc: 0.950 | 3 features (e.g., feat1, feat2...) |
 
 ---
 
@@ -120,7 +149,15 @@ This project follows a modular architecture designed for scalability and maintai
 
 Status: In Development (Refactoring and Documentation Phase)
 
-### Latest Evaluation Metrics (Placeholder)
+### Key Metrics Summary (Conceptual)
+
+**Key Performance Indicators (Conceptual):**
+-   Baseline stats (`baseline_stats.json`): Main accuracy metric not found in expected location.
+-   Current stats (`current_stats.json`): Main accuracy metric not found in expected location.
+
+*Note: This is a conceptual summary. Refer to detailed evaluation reports for comprehensive metrics.*
+
+### Latest Evaluation Metrics (from logs/latest_eval_report.json)
 
 
 ---
@@ -153,8 +190,8 @@ Status: In Development (Refactoring and Documentation Phase)
 ### Changelog Highlights
 
 **Recent Changes (from Git History):**
-- `a6aec7c`: Apply patch /tmp/80717e7e-5dee-4694-add6-8b0912453a89.patch (2025-05-28 by google-labs-jules[bot])
-- `1c30c93`: refactor: Finalize v1.0 and acknowledge next-phase strategic feedback (2025-05-27 by google-labs-jules[bot])
+- `f0da4b8`: Apply patch /tmp/f9255a87-67d2-4d79-bb88-85a76ec919e9.patch (2025-05-29 by google-labs-jules[bot])
+- `a663488`: Merge pull request #4 from Leifson1337/feat/initial-project-hardening-and-structuring (2025-05-29 by Leifson1337)
 
 ... (see full commit history for more details)
 

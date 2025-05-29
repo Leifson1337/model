@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  app-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # For production, you might build with specific ARGs if needed,
+      # e.g., for a specific base image or production-only build steps.
+      # args:
+      #   BASE_IMAGE: python:3.9-bullseye # Or your chosen prod-compatible builder base
+      #   FINAL_BASE_IMAGE: python:3.9-slim-bullseye # Or your chosen prod-compatible final base
+    
+    container_name: qlop_app_prod_container
+
+    # Environment variables for a production-like environment
+    environment:
+      - PYTHONUNBUFFERED=1
+      - APP_ENV=production
+      - LOG_LEVEL=INFO # Typically INFO or WARNING for production
+      # Any production-specific API keys or settings should be securely managed,
+      # potentially via secrets management tools integrated with Docker Compose,
+      # or by using .env files that are NOT committed to the repository for production secrets.
+      # For this example, we assume .env might contain them or they are injected by the deployment system.
+    
+    env_file:
+      - .env # Loads variables from .env file. Ensure this file is secured for production.
+
+    # In production, do NOT mount the source code from the host.
+    # The application code should be baked into the image built by Dockerfile.
+    # Volumes should only be used for persistent data, if necessary.
+    volumes:
+      # Example: Mount named volumes for persistent data storage if your app needs it.
+      # These volumes are managed by Docker and persist data across container restarts/updates.
+      - qlop_data_prod:/app/data_prod_mounted # Example for persistent output data
+      - qlop_models_prod:/app/models_prod_mounted # Example for persistent models if not baked in
+      - qlop_logs_prod:/app/logs # Persist logs outside the container
+
+    # Ports: Only expose ports if this "production" deployment runs a server (API, GUI).
+    # For a CLI-only tool that runs tasks and exits, port mapping is usually not needed.
+    # ports:
+    #   - "80:8501" # Example: Mapping Streamlit to port 80 on the host
+
+    # The Dockerfile's ENTRYPOINT and CMD will be used by default.
+    # You can override the CMD here if you want this production service to run a specific task.
+    # For a CLI tool, this might be a specific pipeline run or a daemon mode if applicable.
+    # If this compose file is just for packaging and running ad-hoc commands,
+    # you'd typically provide the command when running `docker-compose run`.
+    # Example: Run a specific data processing pipeline by default
+    # command: ["python", "main.py", "run-all-pipeline", "--config", "config/production_pipeline_config.json"]
+    #
+    # Or, if it's meant to be an interactive container for running commands in a prod-like environment:
+    # (though `docker exec` into a running container based on a simpler service might be better)
+    # tty: true
+    # stdin_open: true
+    # command: ["tail", "-f", "/dev/null"] # Keeps container running
+
+    # Healthcheck defined in Dockerfile will be used.
+
+networks:
+  default:
+    driver: bridge
+
+# Named volumes for production data persistence
+volumes:
+  qlop_data_prod:
+    # driver: local # Default, or specify external drivers/options if needed
+  qlop_models_prod:
+  qlop_logs_prod:
+```

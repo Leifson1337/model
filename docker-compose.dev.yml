@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  app-dev: # Use a distinct service name or override the 'app' service from a base compose file
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Development-specific build arguments could be passed here if needed
+      # args:
+      #   SOME_DEV_BUILD_ARG: "value"
+    
+    container_name: qlop_app_dev_container
+
+    # Inherits or re-defines environment variables for development
+    environment:
+      - PYTHONUNBUFFERED=1
+      - APP_ENV=development # Indicates to the application it's in development mode
+      - LOG_LEVEL=DEBUG     # Example: More verbose logging for development
+      # Other development-specific environment variables can be added here
+      # e.g., if your app uses a dev database or mock services.
+      # - NEWS_API_KEY=${NEWS_API_KEY_DEV} # From .env file
+      # - ALPHA_VANTAGE_API_KEY=${ALPHA_VANTAGE_API_KEY_DEV} # From .env file
+    
+    env_file:
+      - .env # Load variables from .env file, potentially overriding some above
+
+    # Mounts the current directory into the container for live code updates.
+    # This is critical for development.
+    volumes:
+      - .:/app  # Mounts project root to /app in the container
+      # You might want to add other volume mounts specific to development,
+      # e.g., for persisting shell history or specific tools.
+      # - ~/.bash_history_dev:/root/.bash_history # Example for root user if exec-ing as root
+      # If using a non-root user in Dockerfile (appuser):
+      # - ~/.bash_history_appuser:/home/appuser/.bash_history # For appuser
+
+    # Ports mapping for development services (e.g., Streamlit GUI, API debug server)
+    ports:
+      - "8501:8501" # For Streamlit GUI (if running it)
+      # - "8000:8000" # For FastAPI/Flask API (if running it)
+
+    # Override the default command from Dockerfile or base docker-compose.yml
+    # to run a development-specific task or keep the container alive.
+    # The entrypoint.sh from Dockerfile will still be used.
+    # This command is passed as arguments to entrypoint.sh.
+    #
+    # Option 1: Run Streamlit GUI by default for dev
+    command: ["streamlit", "run", "gui.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+    #
+    # Option 2: Keep the container running idly for `docker exec`
+    # command: ["tail", "-f", "/dev/null"]
+    #
+    # Option 3: Default to help, but tty/stdin_open will keep it running
+    # command: ["python", "main.py", "--help"] 
+
+    # tty and stdin_open are useful for an interactive development container.
+    # These are often defined in the base docker-compose.yml but can be ensured here.
+    tty: true
+    stdin_open: true
+
+    # The healthcheck from the Dockerfile will be used unless overridden here.
+
+networks:
+  default:
+    driver: bridge
+
+# If you had named volumes defined in a base docker-compose.yml and want to use them:
+# volumes:
+#   app_data:
+#   app_models:
+#   app_logs:
+```

@@ -1,6 +1,9 @@
 # src/utils.py
 import logging
+import logging.handlers
 import os
+import json
+import sys
 # from ..src.config_models import GlobalAppConfig # Example for type hinting if setup_logging uses it.
 # from pydantic import validate_call # For validating inputs
 import joblib
@@ -11,52 +14,97 @@ from src import config # Assuming config.py is in the same directory or src is i
 import xgboost as xgb
 import lightgbm as lgb
 
+# Custom JSON Formatter
+class JSONFormatter(logging.Formatter):
+    """
+    Formats log records as JSON strings.
+    """
+    def format(self, record):
+        log_record = {
+            'timestamp': self.formatTime(record, self.datefmt),
+            'level': record.levelname,
+            'message': record.getMessage(),
+            'module': record.module,
+            'function_name': record.funcName,
+            'line_no': record.lineno,
+            'pathname': record.pathname,
+            # Include exception info if present
+            'exception_info': self.formatException(record.exc_info) if record.exc_info else None,
+        }
+        # Add any extra fields passed to the logger
+        if hasattr(record, 'props'):
+            log_record.update(record.props)
+            
+        return json.dumps(log_record)
+
 def setup_logging():
-    '''Configures logging for the application.'''
+    '''Configures structured JSON logging with rotation for the application.'''
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
-    # TODO: These paths and level should ideally come from a validated Pydantic config (e.g., GlobalAppConfig.paths.logs_dir)
-    #       rather than directly from src.config module, for consistency and validation.
-    #       For now, we use src.config but acknowledge this could be improved.
-    logs_dir_from_config = getattr(config, 'LOGS_DIR', 'logs/') # Default if not in src.config
-    log_file_from_config = getattr(config, 'LOG_FILE', os.path.join(logs_dir_from_config, 'app.log'))
+    logs_dir_from_config = getattr(config, 'LOGS_DIR', 'logs/')
+    log_filename_from_config = getattr(config, 'LOG_FILENAME', 'app.log') # Changed from LOG_FILE
     log_level_from_config = getattr(config, 'LOG_LEVEL', 'INFO').upper()
+    log_max_bytes_from_config = getattr(config, 'LOG_MAX_BYTES', 10*1024*1024) # 10MB
+    log_backup_count_from_config = getattr(config, 'LOG_BACKUP_COUNT', 5)
 
     abs_logs_dir = os.path.join(project_root, logs_dir_from_config)
-    # Ensure the filename part of LOG_FILE is extracted if log_file_from_config itself is a full path
-    log_filename_only = os.path.basename(log_file_from_config) 
-    abs_log_file = os.path.join(abs_logs_dir, log_filename_only)
+    abs_log_file = os.path.join(abs_logs_dir, log_filename_from_config)
 
     try:
         os.makedirs(abs_logs_dir, exist_ok=True)
     except OSError as e:
-        # This might happen in restricted environments. Fallback or log to stderr.
-        print(f"Warning: Could not create logs directory {abs_logs_dir}: {e}. Logging to stdout only.", file=sys.stderr)
-        # Configure basic logging to stdout if directory creation fails
+        # Fallback to stderr if directory creation fails
+        sys.stderr.write(f"Warning: Could not create logs directory {abs_logs_dir}: {e}. Logging to stdout only.\n")
         logging.basicConfig(
             level=getattr(logging, log_level_from_config, logging.INFO),
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', # Basic format for stdout fallback
             datefmt='%Y-%m-%d %H:%M:%S',
             handlers=[logging.StreamHandler()]
         )
         return
 
-    # Avoid adding handlers multiple times if called repeatedly
     root_logger = logging.getLogger()
-    if not root_logger.hasHandlers() or len(root_logger.handlers) == 0 : # Check if handlers are already configured
-        # TODO: Consider more advanced logging configurations (e.g., rotating file handlers, structured logging).
-        logging.basicConfig(
-            level=getattr(logging, log_level_from_config, logging.INFO),
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S',
-            handlers=[
-                logging.FileHandler(abs_log_file), # TODO: Add error handling for FileHandler instantiation
-                logging.StreamHandler()
-            ]
+    
+    # Clear existing handlers only if we are sure this is the primary setup call.
+    # This check helps avoid issues if setup_logging is called multiple times,
+    # though ideally it should be called once at application startup.
+    if root_logger.hasHandlers():
+        for handler in root_logger.handlers[:]: # Iterate over a copy
+            root_logger.removeHandler(handler)
+            handler.close() # Close handler before removing
+
+    root_logger.setLevel(getattr(logging, log_level_from_config, logging.INFO))
+
+    # File Handler with JSON Formatter and Rotation
+    try:
+        file_handler = logging.handlers.RotatingFileHandler(
+            abs_log_file, 
+            maxBytes=log_max_bytes_from_config, 
+            backupCount=log_backup_count_from_config
         )
-        logging.info(f"Logging configured. Log file: {abs_log_file}, Level: {log_level_from_config}")
-    else:
-        logging.info("Logging already configured.")
+        file_handler.setFormatter(JSONFormatter(datefmt='%Y-%m-%dT%H:%M:%S%z'))
+        root_logger.addHandler(file_handler)
+    except Exception as e: # Catch potential errors during FileHandler setup
+        sys.stderr.write(f"Warning: Could not setup file logging for {abs_log_file}: {e}. Logging to stdout only.\n")
+        # Fallback to basic stream handler if file handler fails
+        if not any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
+            stream_handler_fallback = logging.StreamHandler()
+            stream_handler_fallback.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+            root_logger.addHandler(stream_handler_fallback)
+        # Ensure level is set even in fallback
+        root_logger.setLevel(getattr(logging, log_level_from_config, logging.INFO))
+        logging.error(f"File logging setup failed. Reason: {e}") # Log error using available handlers
+        return # Potentially return or raise, depending on how critical file logging is
+
+    # Stream Handler (for console output, e.g. during development or for CLI)
+    # Uses a simpler, human-readable format for the console.
+    stream_handler = logging.StreamHandler()
+    stream_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    stream_handler.setFormatter(stream_formatter)
+    stream_handler.setLevel(getattr(logging, log_level_from_config, logging.INFO)) # Console can also respect log level
+    root_logger.addHandler(stream_handler)
+    
+    logging.info(f"Structured JSON logging configured. Log file: {abs_log_file}, Level: {log_level_from_config}")
 
 
 def save_model(model, model_name: str, models_dir: str = None):

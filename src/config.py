@@ -30,8 +30,11 @@ MODELS_DIR = "models/"      # Base models directory
 LOGS_DIR = "logs/"          # Base logs directory
 
 # Logging configuration - Also often environment-dependent.
-LOG_FILE = LOGS_DIR + "app.log" 
-LOG_LEVEL = "INFO" # e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL
+# These settings are used by src/utils.py:setup_logging()
+LOG_FILENAME = "app.log"    # Log filename
+LOG_LEVEL = "INFO"          # e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL
+LOG_MAX_BYTES = 10 * 1024 * 1024  # Max log file size (10MB)
+LOG_BACKUP_COUNT = 5        # Number of backup log files to keep
 
 # --- End DEPRECATION NOTICE ---
 
