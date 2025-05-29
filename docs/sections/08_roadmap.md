@@ -14,4 +14,6 @@
     -   Cloud deployment options.
     -   Real-time prediction capabilities.
 
+{{pipeline_status}}
+
 (This roadmap is indicative and subject to change.)

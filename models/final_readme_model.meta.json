@@ -1,0 +1,12 @@
+{
+    "model_name": "Final_README_Model_Test",
+    "model_filepath_relative": "models/final_readme_model.pkl",
+    "timestamp_utc": "2023-10-29T15:05:00Z",
+    "metrics": {
+        "accuracy": 0.89,
+        "auc": 0.92
+    },
+    "feature_config_used": {
+        "features_used": ["final_feat1", "final_feat2"]
+    }
+}

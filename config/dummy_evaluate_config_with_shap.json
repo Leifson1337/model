@@ -1,0 +1,11 @@
+{
+    "model_path": "models_eval_test/dummy_model.keras",
+    "scaler_path": null,
+    "test_data_path": "data_eval_test/dummy_test_data.csv",
+    "metrics_output_json_path": "logs/dummy_eval_metrics_with_shap.json",
+    "metrics_to_compute": ["accuracy", "roc_auc"],
+    "target_column": "custom_target",
+    "model_type": "KerasGeneric",
+    "shap_summary_plot_path": "logs/shap_summary_plot.png",
+    "shap_train_data_sample_path": "data_eval_test/dummy_test_data.csv" 
+}

@@ -14,6 +14,9 @@ This project follows a modular architecture designed for scalability and maintai
     -   `utils.py`: General utility functions, including logging and model saving/loading.
     -   `sentiment_analysis.py`: News sentiment fetching and analysis.
     -   `fundamental_data.py`: Fetching and processing fundamental stock data.
+
+{{models_overview}}
+
 -   **`main.py`**: CLI entry point using `click`.
 -   **`gui.py`**: Streamlit GUI application.
 -   **`api/`**: For the future REST/gRPC API:

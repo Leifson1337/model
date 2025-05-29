@@ -16,8 +16,6 @@ python main.py --help
 -   `python main.py backtest --config <path_to_backtest_config.json>`
 -   `python main.py export --config <path_to_export_config.json>`
 
-<!-- AUTOGEN:CLI_COMMANDS_LIST -->
-(CLI command list will be auto-generated here in the future)
-<!-- END_AUTOGEN:CLI_COMMANDS_LIST -->
+{{cli_commands_list}}
 
 For detailed CLI workflows and configuration options, see [docs/workflows/](./docs/workflows/). The configuration for each command is defined using Pydantic models in `src/config_models.py`.

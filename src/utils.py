@@ -132,6 +132,13 @@ def save_model(model, model_name: str, models_dir: str = None):
             else: # Default to joblib for .pkl or unspecified for LGBM wrapper
                 joblib.dump(model, model_path)
                 logging.info(f"LightGBM model (sklearn wrapper) '{model_name}' saved using joblib to {model_path}")
+        elif 'catboost' in str(type(model)).lower() and hasattr(model, 'save_model'): # Check for CatBoost
+            if model_name.endswith(".cbm"):
+                 model.save_model(model_path, format="cbm")
+                 logging.info(f"CatBoost model '{model_name}' saved in native cbm format to {model_path}")
+            else: # Default to joblib for CatBoost if not .cbm
+                joblib.dump(model, model_path)
+                logging.info(f"CatBoost model '{model_name}' saved using joblib to {model_path}")
         else: 
             joblib.dump(model, model_path)
             logging.info(f"Model '{model_name}' saved using joblib to {model_path}")
@@ -194,6 +201,15 @@ def load_model(model_name: str, models_dir: str = None):
             # A common pattern is to save the scikit-learn wrapper with joblib.
             logging.info(f"LightGBM Booster '{model_name}' loaded from native format {model_path}. Wrap in LGBMClassifier if needed.")
             return model # This is a Booster object, not LGBMClassifier.
+        elif model_name.endswith(".cbm"): # CatBoost native
+            # Need to import CatBoostClassifier or Regressor to load into.
+            # This is a simplification; usually you'd know the model type.
+            # For now, assume it's a classifier if not specified.
+            from catboost import CatBoostClassifier # Import here to avoid circular dependency if utils is imported by modeling
+            model = CatBoostClassifier() # Create an empty model instance
+            model.load_model(model_path, format="cbm")
+            logging.info(f"CatBoost model '{model_name}' loaded from native cbm format {model_path}")
+            return model
 
         # Default to joblib for .pkl or if other methods failed/not applicable
         model = joblib.load(model_path)

@@ -1,0 +1,14 @@
+{
+    "model_name_from_config": "LSTMTest",
+    "model_version": "v20230103000000_ghi789",
+    "model_filename": "model.keras",
+    "model_filepath_full": "/app/models/LSTMTest/v20230103000000_ghi789/model.keras",
+    "timestamp_utc": "2023-01-03T00:00:00Z",
+    "metrics": {"auc": 0.92, "loss": 0.15},
+    "feature_config_used": {"features_used": ["X", "Y", "Z"], "sequence_length": 20},
+    "training_config_file": "training_config_lstm.json",
+    "reproducibility_details": {
+        "git_commit_hash": "ghi789hash",
+        "library_versions": {"tensorflow": "2.10.0", "pandas": "1.5.0"}
+    }
+}

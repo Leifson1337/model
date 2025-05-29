@@ -21,4 +21,6 @@ torch>=1.10.0 # Keeping torch as transformers often depend on it.
 # torchvision # Removed, usually for image data augmentation/models
 # torchaudio # Removed, usually for audio data augmentation/models
 pydantic>=1.8.2 # Added as it's used for config models
-# Ensure pydantic is here, it was installed in step 7 but might not be in reqs.txt yet.
+GitPython>=3.0.0 # Added for dynamic changelog generation
+joblib>=1.1.0 # Added for model saving/loading in src.utils
+shap>=0.40.0 # Added for SHAP value calculation

@@ -14,4 +14,6 @@
 - **CI/CD Readiness:** Basic testing structure (`tests/`) and integrity checks (`check_pipeline_integrity.py`).
 - **Auto-generated Documentation:** This README is auto-generated from modular sections.
 
+{{feature_list}}
+
 (More features to be listed as developed)

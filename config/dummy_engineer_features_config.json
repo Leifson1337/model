@@ -1,0 +1,13 @@
+{
+    "input_data_path": "data/raw/dummy_input_for_fe.csv",
+    "output_features_path": "data/processed/dummy_engineered_features.parquet",
+    "technical_indicators": true,
+    "rolling_lag_features": true,
+    "sentiment_features": false,
+    "fundamental_features": false,
+    "target_variable": {
+        "enabled": true,
+        "days_forward": 5,
+        "threshold": 0.02
+    }
+}

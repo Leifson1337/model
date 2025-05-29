@@ -1,0 +1,5 @@
+{
+    "numeric_feat": {"dtype": "float64", "mean": 12.0, "std": 2.5, "min": 0.0, "max": 22.0, "median": 11.5, "p25": 6.0, "p75": 18.0, "missing_percentage": 5.0, "total_count": 100},
+    "cat_feat": {"dtype": "object", "unique_count": 4, "top_n_values": {"A": 40, "B": 25, "D": 25, "C":10}, "missing_percentage": 0.0, "total_count": 100},
+    "new_feat": {"dtype": "float64", "mean": 1.0, "std": 0.1, "min": 0.5, "max": 1.5, "median": 1.0, "p25": 0.8, "p75": 1.2, "missing_percentage": 0.0, "total_count": 100}
+}
