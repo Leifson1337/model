@@ -1,0 +1,14 @@
+{
+    "model_name_from_config": "XGBoostTest",
+    "model_version": "v20230101000000_abc123",
+    "model_filename": "model.joblib",
+    "model_filepath_full": "/app/models/XGBoostTest/v20230101000000_abc123/model.joblib",
+    "timestamp_utc": "2023-01-01T00:00:00Z",
+    "metrics": {"accuracy": 0.80, "f1_score": 0.75},
+    "feature_config_used": {"features_used": ["A", "B"]},
+    "training_config_file": "training_config_v1.json",
+    "reproducibility_details": {
+        "git_commit_hash": "abc123hash",
+        "library_versions": {"pandas": "1.5.0"}
+    }
+}

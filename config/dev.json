@@ -1,0 +1,9 @@
+{
+    "environment": "development",
+    "log_level": "DEBUG",
+    "data_path": "data/raw/dev_data.csv",
+    "model_params": {
+        "type": "RandomForest",
+        "n_estimators": 100
+    }
+}

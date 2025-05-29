@@ -1,6 +1,12 @@
 # src/sentiment_analysis.py
 import os
 import json
+# from ..src.config_models import NewsApiConfig, SentimentAnalysisConfig # Example for type hinting
+# from pydantic import validate_call # For validating inputs
+
+# TODO: Define expected input/output schemas if this module produces standalone data artifacts.
+#       Input: Text data. Output: DataFrame with sentiment scores.
+# TODO: Log key library versions (transformers, torch) for reproducibility.
 import pandas as pd
 from datetime import datetime, timedelta
 from newsapi import NewsApiClient
@@ -40,28 +46,36 @@ def fetch_news(
     start_date_str: str, 
     end_date_str: str, 
     api_key: str = None, 
-    max_articles_per_query: int = 100, # Max for 'everything' endpoint per request is 100
-    max_pages: int = 1 # Limit pages to avoid excessive API calls
+    max_articles_per_query: int = 100, 
+    max_pages: int = 1 
+    # config: Optional[NewsApiConfig] = None # Alternative: pass validated config object
 ) -> list:
     """
     Fetches news articles for a given ticker and date range using NewsAPI.
     Implements file-based caching.
+
+    Args:
+        # TODO: Validate inputs (e.g., ticker format, date formats, API key presence if not from config).
+        #       Consider using Pydantic's @validate_call.
     """
-    if api_key is None:
-        api_key = config.NEWS_API_KEY
+    # TODO: Robust API key handling (e.g., from env var, then config object, then global config.py as last resort).
+    effective_api_key = api_key if api_key else config.NEWS_API_KEY 
     
-    if not api_key or api_key == "YOUR_NEWS_API_KEY_HERE":
+    if not effective_api_key or effective_api_key == "YOUR_NEWS_API_KEY_HERE":
         print("Warning: NewsAPI key not configured or is a placeholder. Skipping news fetching.")
+        # TODO: Log this warning. Could raise a specific exception if API key is critical.
         return []
 
-    newsapi = NewsApiClient(api_key=api_key)
+    newsapi = NewsApiClient(api_key=effective_api_key)
     all_articles_data = []
     
     print(f"Fetching news for {ticker} from {start_date_str} to {end_date_str}...")
 
+    # TODO: Implement retry logic for API calls (newsapi.get_everything).
+    # TODO: More sophisticated error handling for different API error codes (rate limits, auth errors, etc.).
     for page_num in range(1, max_pages + 1):
         cache_filename = _get_cache_filename(ticker, start_date_str, end_date_str, page_num)
-        cached_data = _load_from_cache(cache_filename)
+        cached_data = _load_from_cache(cache_filename) # TODO: Add TTL/expiry for cache files.
 
         if cached_data:
             print(f"Loading news from cache: {cache_filename}")
@@ -69,43 +83,53 @@ def fetch_news(
         else:
             try:
                 print(f"Fetching news from API - Page {page_num}...")
+                # TODO: Make query parameters (q, language, sort_by) configurable if needed.
                 articles_page = newsapi.get_everything(
-                    q=ticker, # Query term
+                    q=ticker, 
                     from_param=start_date_str,
                     to=end_date_str,
                     language='en',
-                    sort_by='publishedAt', # 'relevancy' or 'popularity' or 'publishedAt'
+                    sort_by='publishedAt', 
                     page_size=max_articles_per_query,
                     page=page_num
                 )
                 if articles_page.get('status') == 'ok':
                     _save_to_cache(articles_page, cache_filename)
                 else:
-                    print(f"Error from NewsAPI: {articles_page.get('message')}")
-                    return all_articles_data # Return what we have so far
-            except Exception as e:
-                print(f"Error fetching news from API: {e}")
-                return all_articles_data # Return what we have so far
+                    # TODO: Log detailed API error.
+                    print(f"Error from NewsAPI (Page {page_num}): {articles_page.get('code')} - {articles_page.get('message')}")
+                    # Depending on error, might break or continue if partial results are acceptable.
+                    # For now, stop and return what we have.
+                    return all_articles_data 
+            except Exception as e: # Catch network errors, request exceptions
+                # TODO: Log exception details.
+                print(f"Exception fetching news from API (Page {page_num}): {e}")
+                return all_articles_data 
         
         if articles_page and articles_page.get('status') == 'ok':
             all_articles_data.extend(articles_page['articles'])
-            if len(articles_page['articles']) < max_articles_per_query or page_num * max_articles_per_query >= articles_page.get('totalResults', 0):
-                # Break if last page fetched or total results limit reached
+            # Check if this was the last page of results
+            if len(articles_page['articles']) < max_articles_per_query or \
+               (page_num * max_articles_per_query >= articles_page.get('totalResults', 0) and articles_page.get('totalResults', 0) > 0) :
                 break 
-        else: # If status not ok from cache or API
+        else: # If status not 'ok' from cache or API response
+            print(f"Stopping news fetch for {ticker} due to issue on page {page_num} or no more articles.")
             break
 
-
+    # TODO: Standardize the structure of `extracted_articles` if it's used by other modules.
+    #       Consider a Pydantic model for an Article.
     extracted_articles = []
     for article in all_articles_data:
-        extracted_articles.append({
-            'publishedAt': article.get('publishedAt'),
-            'title': article.get('title'),
-            'description': article.get('description'),
-            'content': article.get('content') 
-        })
+        # Basic check for essential fields.
+        if article and article.get('publishedAt') and (article.get('title') or article.get('description')):
+            extracted_articles.append({
+                'publishedAt': article.get('publishedAt'),
+                'title': article.get('title'),
+                'description': article.get('description'),
+                'content': article.get('content') # Content can be None or truncated for some articles
+            })
     
-    print(f"Fetched {len(extracted_articles)} total articles for {ticker}.")
+    print(f"Fetched and processed {len(extracted_articles)} articles for {ticker}.")
     return extracted_articles
 
 

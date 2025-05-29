@@ -1,6 +1,12 @@
 import pandas as pd
 import numpy as np
 import backtrader as bt
+# from ..src.config_models import BacktestConfig # Example for type hinting
+# from pydantic import validate_call # For validating inputs
+
+# TODO: Define expected input/output schemas for data_df and predictions_series.
+#       Ensure consistency with how predictions are formatted by the modeling module.
+# TODO: Log key library versions (backtrader, pandas) for reproducibility.
 
 # --- Existing simple_backtest function (commented out as per instructions) ---
 # def simple_backtest(...):
@@ -10,27 +16,40 @@ import backtrader as bt
 
 class SignalStrategy(bt.Strategy):
     """
-    A simple Backtrader strategy based on an external signal series.
-    - Signal = 1: Go Long
-    - Signal = -1: Go Short
-    - Signal = 0: Close position / Stay Neutral
+    A Backtrader strategy that converts raw predictions/scores into trading signals
+    based on configurable thresholds.
+    - Prediction > long_threshold: Go Long
+    - Prediction < short_threshold: Go Short
+    - Otherwise: Close position / Stay Neutral
     """
     params = (
-        ('signals', None), # Pass the signals DataFrame/Series as a parameter
-        ('target_percent', 0.95), # Target percentage of portfolio for trades
+        ('predictions', None), # Pass the raw prediction Series as a parameter
+        ('strategy_config', { # Default strategy configuration
+            'long_threshold': 0.5,
+            'short_threshold': -0.5,
+            'target_percent': 0.95, # Target percentage of portfolio for trades
+        }),
     )
 
     def __init__(self):
-        if self.params.signals is None:
-            raise ValueError("Signals parameter must be provided to SignalStrategy.")
+        if self.params.predictions is None:
+            raise ValueError("Predictions parameter must be provided to SignalStrategy.")
         
-        # Store signals, ensuring the index is datetime for lookup
-        self.signals_series = self.params.signals
-        if not isinstance(self.signals_series.index, pd.DatetimeIndex):
+        self.raw_predictions = self.params.predictions
+        if not isinstance(self.raw_predictions.index, pd.DatetimeIndex):
             try:
-                self.signals_series.index = pd.to_datetime(self.signals_series.index)
+                self.raw_predictions.index = pd.to_datetime(self.raw_predictions.index)
             except Exception as e:
-                raise ValueError(f"Could not convert signals index to DatetimeIndex: {e}")
+                raise ValueError(f"Could not convert predictions index to DatetimeIndex: {e}")
+
+        # Extract parameters from strategy_config
+        config = self.params.strategy_config
+        self.long_threshold = config.get('long_threshold', 0.5)
+        self.short_threshold = config.get('short_threshold', -0.5)
+        self.target_percent = config.get('target_percent', 0.95)
+        
+        if self.long_threshold <= self.short_threshold:
+            raise ValueError("long_threshold must be greater than short_threshold.")
 
         self.order = None # To keep track of pending orders
 
@@ -40,37 +59,40 @@ class SignalStrategy(bt.Strategy):
         # print(f'{dt.isoformat()} {txt}') # Optional: print logs
 
     def next(self):
-        # Get current date from data feed
         current_date = self.datas[0].datetime.date(0)
-        
-        # Get signal for the current date
-        # Using .get(current_date, 0) to default to 0 (neutral) if date is missing in signals
-        current_signal = self.signals_series.get(current_date, 0) 
+        current_prediction = self.raw_predictions.get(current_date, np.nan) # Default to NaN if missing
 
+        current_signal = 0 # Default to neutral
+        if not np.isnan(current_prediction):
+            if current_prediction > self.long_threshold:
+                current_signal = 1
+            elif current_prediction < self.short_threshold:
+                current_signal = -1
+        
         current_position_size = self.getposition(self.datas[0]).size
 
         if self.order: # Check if an order is pending
             return
 
         if current_signal == 1: # Long signal
-            if current_position_size == 0: # No position
-                self.log(f'BUY CREATE, {self.datas[0].close[0]:.2f}, Signal: {current_signal}')
-                self.order = self.order_target_percent(target=self.params.target_percent)
+            if current_position_size == 0:
+                self.log(f'BUY CREATE, Pred: {current_prediction:.2f}, Close: {self.datas[0].close[0]:.2f}, Signal: {current_signal}')
+                self.order = self.order_target_percent(target=self.target_percent)
             elif current_position_size < 0: # Currently short, close short and go long
-                self.log(f'CLOSE SHORT & BUY CREATE, {self.datas[0].close[0]:.2f}, Signal: {current_signal}')
-                self.order = self.order_target_percent(target=self.params.target_percent) # This will close short and open long
+                self.log(f'CLOSE SHORT & BUY CREATE, Pred: {current_prediction:.2f}, Close: {self.datas[0].close[0]:.2f}, Signal: {current_signal}')
+                self.order = self.order_target_percent(target=self.target_percent)
         
         elif current_signal == -1: # Short signal
-            if current_position_size == 0: # No position
-                self.log(f'SELL CREATE (SHORT), {self.datas[0].close[0]:.2f}, Signal: {current_signal}')
-                self.order = self.order_target_percent(target=-self.params.target_percent)
+            if current_position_size == 0:
+                self.log(f'SELL CREATE (SHORT), Pred: {current_prediction:.2f}, Close: {self.datas[0].close[0]:.2f}, Signal: {current_signal}')
+                self.order = self.order_target_percent(target=-self.target_percent)
             elif current_position_size > 0: # Currently long, close long and go short
-                self.log(f'CLOSE LONG & SELL CREATE (SHORT), {self.datas[0].close[0]:.2f}, Signal: {current_signal}')
-                self.order = self.order_target_percent(target=-self.params.target_percent) # This will close long and open short
+                self.log(f'CLOSE LONG & SELL CREATE (SHORT), Pred: {current_prediction:.2f}, Close: {self.datas[0].close[0]:.2f}, Signal: {current_signal}')
+                self.order = self.order_target_percent(target=-self.target_percent)
 
-        elif current_signal == 0: # Neutral signal
-            if current_position_size != 0: # If a position exists
-                self.log(f'CLOSE POSITION, {self.datas[0].close[0]:.2f}, Signal: {current_signal}')
+        elif current_signal == 0: # Neutral signal (or prediction is NaN)
+            if current_position_size != 0:
+                self.log(f'CLOSE POSITION, Pred: {current_prediction:.2f}, Close: {self.datas[0].close[0]:.2f}, Signal: {current_signal}')
                 self.order = self.order_target_percent(target=0.0) # Close position
 
     def notify_order(self, order):
@@ -92,25 +114,31 @@ class SignalStrategy(bt.Strategy):
 
 
 def run_backtrader_backtest(
-    data_df: pd.DataFrame, 
-    signals_df: pd.Series, # Expects a Series with datetime index and signal column
-    initial_capital: float = 100000.0, 
-    leverage: float = 1.0, 
+    data_df: pd.DataFrame,
+    predictions_series: pd.Series, # Expects a Series with datetime index and raw prediction scores
+    strategy_config: dict, # Configuration for the strategy (thresholds, target_percent)
+    initial_capital: float = 100000.0,
+    leverage: float = 1.0, # Note: leverage is now primarily handled by strategy_config's target_percent if sizer is PercentSizer
     commission_bps: float = 2.0, # e.g. 2 bps = 0.02%
     slippage_bps: float = 1.0,   # e.g. 1 bps = 0.01%
     knock_out_long_bps: float = None, # Placeholder, not implemented in this version
     knock_out_short_bps: float = None # Placeholder, not implemented in this version
     ):
     """
-    Runs a backtest using Backtrader with the provided data and signals.
+    Runs a backtest using Backtrader with the provided data, raw predictions, and strategy configuration.
 
     Args:
         data_df: Pandas DataFrame with Datetime index and OHLCV columns.
-                 Column names must be standard (Open, High, Low, Close, Volume, OpenInterest).
+                 # TODO: Validate schema (required columns: Open, High, Low, Close, Volume).
                  'OpenInterest' can be zero if not available.
-        signals_df: Pandas Series with Datetime index and signals (1, -1, 0).
+        predictions_series: Pandas Series with Datetime index and raw prediction scores/values.
+                 # TODO: Validate that index aligns with data_df and values are numeric.
+        strategy_config: Dictionary containing strategy parameters like 'long_threshold',
+                         'short_threshold', 'target_percent'.
+                         # TODO: Validate this dict, ideally using a Pydantic model from config_models.
         initial_capital: Starting capital.
-        leverage: Leverage factor for position sizing.
+        leverage: Leverage factor. Note: The sizer's `percents` parameter is derived from
+                  `strategy_config['target_percent']` and this leverage factor.
         commission_bps: Commission in basis points.
         slippage_bps: Slippage in basis points.
         knock_out_long_bps: Placeholder for knock-out level for long positions (not implemented).
@@ -119,28 +147,43 @@ def run_backtrader_backtest(
     Returns:
         A dictionary of performance metrics.
         Optionally, could also return the cerebro object for plotting if needed.
+        # TODO: Formalize the structure of the returned metrics dictionary.
     """
+    # TODO: Add try-except block for robust error handling during backtest execution.
+    # TODO: Consider caching backtest results if inputs (data, predictions, config) are unchanged.
+
     if knock_out_long_bps is not None or knock_out_short_bps is not None:
         print("Warning: Knock-out parameters are provided but not implemented in this Backtrader version.")
 
-    cerebro = bt.Cerebro()
+    # TODO: Validate input DataFrames and Series (e.g., non-empty, correct dtypes, matching indices for predictions and data).
+    if data_df.empty:
+        print("Error: Input data_df for backtest is empty.")
+        return {}, None # Return empty metrics and no cerebro object
+    if predictions_series.empty:
+        print("Error: Input predictions_series for backtest is empty.")
+        return {}, None
+    # Further checks: index alignment, OHLCV column presence, numeric predictions.
+
+    try:
+        cerebro = bt.Cerebro()
+    except Exception as e:
+        print(f"Error initializing Backtrader Cerebro: {e}")
+        return {}, None
 
     # Add data feed
-    # Ensure columns are named as Backtrader expects: open, high, low, close, volume, openinterest
-    # If 'Adj Close' is present and preferred, rename it to 'close'. For now, assumes 'Close' is the primary.
-    # If 'OpenInterest' is not present, create a dummy one.
+
+    # Add data feed
     if 'OpenInterest' not in data_df.columns:
-        data_df['OpenInterest'] = 0 
+        data_df['OpenInterest'] = 0
     
-    # Ensure column names are lowercase as Backtrader might prefer
     data_df_bt = data_df.copy()
-    data_df_bt.columns = [col.lower() for col in data_df_bt.columns] # open, high, low, close, volume, openinterest
+    data_df_bt.columns = [col.lower() for col in data_df_bt.columns]
     
     data_feed = bt.feeds.PandasData(dataname=data_df_bt)
     cerebro.adddata(data_feed)
 
-    # Add strategy
-    cerebro.addstrategy(SignalStrategy, signals=signals_df) # Pass signals Series
+    # Add strategy, passing predictions and the strategy_config dictionary
+    cerebro.addstrategy(SignalStrategy, predictions=predictions_series, strategy_config=strategy_config)
 
     # Set broker parameters
     cerebro.broker.setcash(initial_capital)
@@ -173,11 +216,73 @@ def run_backtrader_backtest(
     # This might not be standard if `target_trade_percent * leverage > 100`.
     # A more standard PercentSizer use would be `percents=95` (trade with 95% of equity), and leverage
     # would be managed by `setmargin` or by a custom sizer.
-    # For this task, we'll stick to the prompt's suggestion:
-    target_trade_percent = 95 # Strategy aims to use 95% for a trade
-    effective_sizer_percent = min(target_trade_percent * leverage, 99) # Cap at 99% to avoid issues with 100%
-    cerebro.addsizer(bt.sizers.PercentSizer, percents=effective_sizer_percent)
+    # For this task, we'll use the target_percent from strategy_config, potentially amplified by leverage.
+    # The SignalStrategy itself uses strategy_config['target_percent'] for order_target_percent.
+    # The sizer here ensures the strategy doesn't try to allocate more than possible.
+    # A common approach is to let the strategy define its desired target size (e.g. via order_target_percent)
+    # and the sizer manages the actual allocation based on cash/portfolio value.
+    # If strategy_config['target_percent'] is, say, 0.95 (95%), and leverage is 1,
+    # then up to 95% of equity is used. If leverage is 2, it could mean 190% if margin is available.
+    # Backtrader's PercentSizer applies to current portfolio equity.
+    # We can make `effective_sizer_percent` dependent on `strategy_config['target_percent']` and `leverage`.
+    # This makes `leverage` a multiplier on the strategy's defined `target_percent`.
+    
+    # The strategy's internal self.target_percent IS the percentage of portfolio to use for a trade.
+    # The sizer's `percents` parameter is what PercentSizer uses.
+    # If the strategy issues `order_target_percent(target=self.target_percent)`,
+    # this target is relative to current portfolio value.
+    # The leverage parameter in run_backtrader_backtest can inform the sizer or broker margin.
+    # For simplicity with PercentSizer:
+    # Let strategy's target_percent be the primary guide. Leverage can scale this if desired.
+    # The strategy's `target_percent` is already in `strategy_config`.
+    # `effective_sizer_percent` could be `strategy_config.get('target_percent', 0.95) * leverage`
+    # capped at 99 for safety with PercentSizer.
+    
+    # The strategy itself uses `self.order_target_percent(target=self.target_percent)`
+    # or `target=-self.target_percent`. This function in Backtrader directly calculates
+    # the number of shares/contracts to reach that percentage of the current portfolio value.
+    # So, the `leverage` parameter in `run_backtrader_backtest` is somewhat redundant if
+    # `strategy_config['target_percent']` is already considered leveraged (e.g. > 1.0 for futures).
+    # However, if `target_percent` is for a single asset in a multi-asset portfolio, or if it's
+    # meant to be a fraction of allocated capital which is itself leveraged, it gets complex.
 
+    # Sticking to a simple interpretation for now:
+    # The strategy defines its trade size with `strategy_config['target_percent']`.
+    # `bt.sizers.PercentSizer` with `percents=strategy_config['target_percent']*100` would be redundant
+    # because `order_target_percent` already does this.
+    # If we want to apply a global leverage that might allow `target_percent` to effectively exceed 100%
+    # of initial capital (e.g. through margin), that's usually set on the broker.
+    # `cerebro.broker.setmargin(margin)` for futures.
+    # For now, the sizer will just use the strategy's defined target_percent directly.
+    # The `leverage` parameter to `run_backtrader_backtest` will be used to scale the
+    # `percents` for the sizer, to ensure it aligns with the strategy's intent if `target_percent`
+    # is meant to be a fraction of *leveraged* capital.
+    
+    # Let's assume strategy_config['target_percent'] is the desired portfolio fraction (e.g., 0.95 for 95%).
+    # The `leverage` variable scales this.
+    sizer_target_percent_effective = strategy_config.get('target_percent', 0.95) * leverage
+    # Cap at 0.99 because 1.0 (100%) can sometimes lead to issues if commissions/slippage are involved.
+    # Or, if leverage implies >100% of portfolio, this sizer is not the way to achieve that directly.
+    # True margin trading would be `cerebro.broker.setmargin()`.
+    # For now, we'll assume PercentSizer is used and `target_percent` in strategy means % of current equity.
+    # The strategy uses `order_target_percent` which is usually sufficient.
+    # Adding a sizer like PercentSizer ensures that if the strategy *didn't* use `order_target_percent`
+    # but used `order_target_value` or `buy()`, the sizer would enforce the percentage.
+    # Since SignalStrategy *does* use `order_target_percent`, an explicit sizer here
+    # with `percents` derived from the strategy's own `target_percent` is mostly for ensuring consistency
+    # or if we wanted to globally cap allocation.
+    
+    # Let's use the `strategy_config['target_percent']` directly for the sizer,
+    # assuming it's a value like 95 for 95%.
+    # The `leverage` parameter is more of a global setting; its interaction with
+    # `PercentSizer` can be tricky. If `leverage > 1`, it implies we might want to
+    # trade more than our cash. This usually means setting margin requirements.
+    # For this iteration, we'll use `strategy_config['target_percent']` in the sizer,
+    # and acknowledge `leverage` is not fully integrated with margin here.
+    effective_sizer_percents = strategy_config.get('target_percent', 0.95) * 100 # Convert to percentage for sizer
+    effective_sizer_percents = min(effective_sizer_percents * leverage, 99.0) # Apply leverage and cap
+
+    cerebro.addsizer(bt.sizers.PercentSizer, percents=effective_sizer_percents)
 
     # Add analyzers
     cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe', riskfreerate=0.0, annualize=True, timeframe=bt.TimeFrame.Days)
@@ -266,6 +371,97 @@ def run_backtrader_backtest(
 
     return metrics, cerebro # Return cerebro for optional plotting
 
+# Placeholder for walk_forward_test function stub
+def walk_forward_test(data_df: pd.DataFrame, model: any, walk_forward_config: dict, strategy_config: dict) -> dict:
+    """
+    Stub for performing walk-forward testing of a trading strategy.
+
+    In walk-forward testing, the model is periodically retrained on a sliding or expanding window
+    of past data and then tested on the subsequent out-of-sample period. This process is repeated
+    over the entire dataset.
+
+    Args:
+        data_df: Pandas DataFrame with historical market data (OHLCV).
+        model: The predictive model to be used. This could be a trained model object,
+               a function to train a model, or a path to a model.
+        walk_forward_config: Dictionary defining parameters for the walk-forward process, e.g.:
+            - 'train_period_size': Length of the training window.
+            - 'test_period_size': Length of the out-of-sample testing window.
+            - 'step_size': How much the window slides forward for the next iteration.
+            - 'retrain_every_test_period': Boolean, if true, retrain before each test period.
+        strategy_config: Dictionary defining the trading strategy parameters (e.g., thresholds)
+                         to be used with the model's predictions.
+
+    Returns:
+        A dictionary containing aggregated performance metrics from all walk-forward periods
+        and potentially individual period results. For this stub, returns placeholder results.
+    """
+    print(f"\n[STUB] walk_forward_test called.")
+    print(f"  Data shape: {data_df.shape}")
+    print(f"  Model: {model}")
+    print(f"  Walk-forward config: {walk_forward_config}")
+    print(f"  Strategy config: {strategy_config}")
+    
+    # Placeholder logic:
+    # 1. Loop through data based on train/test splits defined by walk_forward_config.
+    # 2. In each loop:
+    #    a. Train/retrain `model` on the current training slice of `data_df`.
+    #    b. Generate predictions using the trained `model` on the test slice.
+    #    c. Run a backtest (e.g., using `run_backtrader_backtest`) on the test slice
+    #       with these predictions and the `strategy_config`.
+    #    d. Collect performance metrics for this period.
+    # 3. Aggregate metrics.
+
+    return {
+        "status": "walk_forward_test stub executed",
+        "total_return_percent": 10.0, # Placeholder
+        "sharpe_ratio": 0.5,          # Placeholder
+        "num_periods": (len(data_df) - walk_forward_config.get('train_period_size',0)) // walk_forward_config.get('test_period_size',1) if walk_forward_config.get('test_period_size',1) > 0 else 0
+    }
+
+# Placeholder for dynamic_rolling_window_evaluation function stub
+def dynamic_rolling_window_evaluation(data_df: pd.DataFrame, model: any, window_params: dict, strategy_config: dict) -> dict:
+    """
+    Stub for performing dynamic rolling-window evaluation of a trading strategy.
+
+    This involves evaluating the strategy's performance over a series of rolling windows,
+    which can help assess its stability and adaptability over time. The model might be
+    retrained at each window or use a pre-trained model.
+
+    Args:
+        data_df: Pandas DataFrame with historical market data (OHLCV).
+        model: The predictive model or a function to obtain predictions.
+        window_params: Dictionary defining parameters for the rolling window, e.g.:
+            - 'window_size': The length of each evaluation window.
+            - 'step_size': How much the window slides forward for the next evaluation.
+            - 'retrain_model_per_window': Boolean, whether to retrain the model for each window.
+        strategy_config: Dictionary defining the trading strategy parameters.
+
+    Returns:
+        A dictionary containing aggregated or time-series performance metrics
+        from the rolling window evaluations. For this stub, returns placeholder results.
+    """
+    print(f"\n[STUB] dynamic_rolling_window_evaluation called.")
+    print(f"  Data shape: {data_df.shape}")
+    print(f"  Model: {model}")
+    print(f"  Window parameters: {window_params}")
+    print(f"  Strategy config: {strategy_config}")
+
+    # Placeholder logic:
+    # 1. Iterate through `data_df` using a rolling window defined by `window_params`.
+    # 2. For each window:
+    #    a. Optionally retrain `model` or use a pre-trained one.
+    #    b. Generate predictions for the current window.
+    #    c. Run a backtest on this window's data with the predictions and `strategy_config`.
+    #    d. Record performance metrics for this window.
+    # 3. Aggregate or present metrics as a time series.
+
+    return {
+        "status": "dynamic_rolling_window_evaluation stub executed",
+        "average_sharpe_over_windows": 0.6, # Placeholder
+        "performance_stability_metric": 0.8 # Placeholder
+    }
+
 if __name__ == '__main__':
     # Generate dummy OHLCV data
     np.random.seed(42)
@@ -284,45 +480,94 @@ if __name__ == '__main__':
     data['Low'] = data[['Open', 'High', 'Low', 'Close']].min(axis=1)
     data['OpenInterest'] = 0 # Dummy OpenInterest
 
-    # Generate dummy signals (ensure index is DatetimeIndex)
-    signal_values = np.random.choice([-1, 0, 1], size=num_periods, p=[0.1, 0.8, 0.1]) # Fewer trades
-    signals_series = pd.Series(signal_values, index=dates, name="signal")
-    if signals_series.iloc[0] == 0 and len(signals_series) > 1:
-        signals_series.iloc[0] = 1 
+    # Generate dummy predictions (raw scores, e.g., from a model)
+    # These are not 1, 0, -1 signals yet. They are scores to be thresholded by the strategy.
+    # Example: scores between -1.5 and 1.5
+    prediction_values = np.random.randn(num_periods) * 0.8 
+    predictions_series = pd.Series(prediction_values, index=dates, name="prediction_score")
+    
+    # Ensure first prediction is not neutral to initiate a trade for testing if desired
+    if len(predictions_series) > 1:
+        if predictions_series.iloc[0] > -0.1 and predictions_series.iloc[0] < 0.1: # if close to zero
+             predictions_series.iloc[0] = 0.6 # Make it a buy signal based on default thresholds
 
-    print("--- Example Backtrader Backtest ---")
+    print("--- Example Backtrader Backtest with Refactored Strategy ---")
     initial_cap = 100000.0
 
-    print("\nTest 1: Basic (Leverage 1x, default costs)")
+    # Define strategy configurations
+    strategy_config_1 = {
+        'long_threshold': 0.5,
+        'short_threshold': -0.5,
+        'target_percent': 0.95, # Use 95% of portfolio for trades
+    }
+    
+    strategy_config_2 = {
+        'long_threshold': 0.2,
+        'short_threshold': -0.2,
+        'target_percent': 0.50, # Use 50% of portfolio for trades
+    }
+
+    print("\nTest 1: Strategy Config 1 (Leverage 1x, default costs)")
     metrics1, cerebro1 = run_backtrader_backtest(
         data_df=data.copy(), 
-        signals_df=signals_series.copy(), 
+        predictions_series=predictions_series.copy(),
+        strategy_config=strategy_config_1,
         initial_capital=initial_cap,
-        leverage=1.0
+        leverage=1.0 # Leverage applied to sizer's percent
     )
-    print("Performance (Test 1 - Basic):")
+    print("Performance (Test 1 - Strategy Config 1):")
     for metric, value in metrics1.items(): print(f"  {metric}: {value}")
 
-    print("\nTest 2: Leverage 2x, Higher Commission (5bps)")
+    print("\nTest 2: Strategy Config 2 (Leverage 1.5x, Higher Commission 5bps)")
     metrics2, cerebro2 = run_backtrader_backtest(
         data_df=data.copy(), 
-        signals_df=signals_series.copy(), 
+        predictions_series=predictions_series.copy(),
+        strategy_config=strategy_config_2,
         initial_capital=initial_cap,
-        leverage=2.0,
+        leverage=1.5, # Leverage applied to sizer's percent
         commission_bps=5.0,
         slippage_bps=2.0
     )
-    print("Performance (Test 2 - Leverage & Costs):")
+    print("Performance (Test 2 - Strategy Config 2):")
     for metric, value in metrics2.items(): print(f"  {metric}: {value}")
     
     # Optional: Plotting (might not work in all environments directly from script)
     # try:
-    #     print("\nPlotting for Test 1 (Basic)...")
+    #     print("\nPlotting for Test 1 (Strategy Config 1)...")
     #     cerebro1.plot(style='candlestick', barup='green', bardown='red')
     # except Exception as e:
     #     print(f"Could not plot: {e}")
 
-    # print("\n--- Old Simple Backtester (for comparison, if it were still here and compatible) ---")
-    # This part is just a note, as the old backtester is removed/commented.
-    # To compare, you'd need to adapt the old one for OHLCV input or this one for just Close price input.
-    # For now, we are just testing the new backtrader implementation.
+    print("\n--- Testing New Stub Functions ---")
+    
+    # Dummy data for stub testing
+    dummy_model = "dummy_model_object_or_path"
+    # Corrected keys to match stub's expectations
+    dummy_walk_forward_config = {
+        "train_period_size": 100, 
+        "test_period_size": 30, 
+        "step_size": 30 # step_size is mentioned in docstring, good to have
+    }
+    dummy_rolling_eval_config = {
+        "window_size": 60, 
+        "step_size": 30, # step_size is mentioned in docstring
+        "evaluation_metric": "sharpe"
+    }
+
+    print("\nTesting walk_forward_test stub:")
+    wf_results = walk_forward_test(
+        data_df=data.copy(), 
+        model=dummy_model, 
+        walk_forward_config=dummy_walk_forward_config,
+        strategy_config=strategy_config_1 # Reuse strategy config for consistency
+    )
+    print(f"Walk-forward test results: {wf_results}")
+
+    print("\nTesting dynamic_rolling_window_evaluation stub:")
+    rolling_results = dynamic_rolling_window_evaluation(
+        data_df=data.copy(), 
+        model=dummy_model, 
+        window_params=dummy_rolling_eval_config,
+        strategy_config=strategy_config_1 # Reuse strategy config
+    )
+    print(f"Dynamic rolling window evaluation results: {rolling_results}")

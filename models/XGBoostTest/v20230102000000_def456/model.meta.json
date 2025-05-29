@@ -1,0 +1,14 @@
+{
+    "model_name_from_config": "XGBoostTest",
+    "model_version": "v20230102000000_def456",
+    "model_filename": "model.joblib",
+    "model_filepath_full": "/app/models/XGBoostTest/v20230102000000_def456/model.joblib",
+    "timestamp_utc": "2023-01-02T00:00:00Z",
+    "metrics": {"accuracy": 0.88, "f1_score": 0.85, "logloss": 0.40},
+    "feature_config_used": {"features_used": ["A", "B", "C", "D"], "preprocessing": "robust"},
+    "training_config_file": "training_config_v2.json",
+    "reproducibility_details": {
+        "git_commit_hash": "def456hash",
+        "library_versions": {"pandas": "1.5.1", "scikit-learn": "1.0.1"}
+    }
+}

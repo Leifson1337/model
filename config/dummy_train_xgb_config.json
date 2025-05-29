@@ -1,0 +1,13 @@
+{
+    "input_features_path": "data/processed/dummy_features_for_train_test.csv",
+    "model_output_path_base": "models_versioned_test",
+    "model_type": "XGBoost",
+    "model_params": {
+        "n_estimators": 10,
+        "learning_rate": 0.1,
+        "max_depth": 3,
+        "objective": "binary:logistic",
+        "eval_metric": "logloss"
+    },
+    "target_column": "target"
+}

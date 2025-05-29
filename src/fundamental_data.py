@@ -1,6 +1,12 @@
 # src/fundamental_data.py
 import yfinance as yf
 import pandas as pd
+# from ..src.config_models import FundamentalDataConfig # Example for type hinting
+# from pydantic import validate_call # For validating inputs
+
+# TODO: Define expected input/output schemas for DataFrames.
+#       Input: Price data (for merging). Output: DataFrame with fundamental features.
+# TODO: Log key library versions (yfinance, pandas) for reproducibility.
 
 def get_fundamental_data(ticker_symbol: str, data_frequency: str = 'quarterly') -> pd.DataFrame:
     """
@@ -14,117 +20,87 @@ def get_fundamental_data(ticker_symbol: str, data_frequency: str = 'quarterly') 
     Returns:
         A Pandas DataFrame with fundamental data indexed by date.
         Features will be forward-filled to cover daily frequency.
+        # TODO: Formalize output schema.
     """
+    # TODO: Input validation for ticker_symbol and data_frequency.
+    # TODO: Implement retry logic for yf.Ticker API calls.
+    # TODO: Consider caching yfinance results to avoid repeated API calls.
+    
     print(f"Fetching fundamental data for {ticker_symbol} ({data_frequency})...")
-    ticker = yf.Ticker(ticker_symbol)
+    try:
+        ticker = yf.Ticker(ticker_symbol)
+    except Exception as e:
+        # TODO: Log this error.
+        print(f"Error creating yf.Ticker object for {ticker_symbol}: {e}")
+        return pd.DataFrame() # Return empty DataFrame on critical error
     
     all_fund_data = []
-
-    # 1. Financials (Income Statement)
-    try:
-        if data_frequency == 'quarterly':
-            financials = ticker.quarterly_financials
-        else:
-            financials = ticker.financials
-        
-        if not financials.empty:
-            financials_proc = financials.T # Transpose to have dates as rows
-            selected_financials = {}
-            if 'Total Revenue' in financials_proc.columns:
-                selected_financials['fund_TotalRevenue'] = financials_proc['Total Revenue']
-            if 'Net Income' in financials_proc.columns:
-                selected_financials['fund_NetIncome'] = financials_proc['Net Income']
-            if 'Gross Profit' in financials_proc.columns:
-                selected_financials['fund_GrossProfit'] = financials_proc['Gross Profit']
-            if 'Operating Income' in financials_proc.columns: # Often called EBIT
-                selected_financials['fund_OperatingIncome'] = financials_proc['Operating Income']
-            if 'EBITDA' in financials_proc.columns: # Check if EBITDA is directly available
-                 selected_financials['fund_EBITDA'] = financials_proc['EBITDA']
-
-            if selected_financials:
-                all_fund_data.append(pd.DataFrame(selected_financials))
-        else:
-            print(f"No {data_frequency} financials data found for {ticker_symbol}.")
-    except Exception as e:
-        print(f"Error fetching/processing financials for {ticker_symbol}: {e}")
-
-    # 2. Balance Sheet
-    try:
-        if data_frequency == 'quarterly':
-            balance_sheet = ticker.quarterly_balance_sheet
-        else:
-            balance_sheet = ticker.balance_sheet
+    statement_types = ['financials', 'balance_sheet', 'cashflow']
+    
+    for stmt_type in statement_types:
+        try:
+            if data_frequency == 'quarterly':
+                data_stmt = getattr(ticker, f"quarterly_{stmt_type}")
+            else: # Default to annual
+                data_stmt = getattr(ticker, stmt_type)
             
-        if not balance_sheet.empty:
-            balance_sheet_proc = balance_sheet.T
-            selected_bs = {}
-            if 'Total Assets' in balance_sheet_proc.columns:
-                selected_bs['fund_TotalAssets'] = balance_sheet_proc['Total Assets']
-            if 'Total Liab' in balance_sheet_proc.columns: # Liabilities
-                selected_bs['fund_TotalLiabilities'] = balance_sheet_proc['Total Liab']
-            if 'Total Stockholder Equity' in balance_sheet_proc.columns:
-                selected_bs['fund_TotalEquity'] = balance_sheet_proc['Total Stockholder Equity']
-            if 'Total Current Assets' in balance_sheet_proc.columns:
-                selected_bs['fund_TotalCurrentAssets'] = balance_sheet_proc['Total Current Assets']
-            if 'Total Current Liabilities' in balance_sheet_proc.columns:
-                selected_bs['fund_TotalCurrentLiabilities'] = balance_sheet_proc['Total Current Liabilities']
-            
-            if selected_bs:
-                all_fund_data.append(pd.DataFrame(selected_bs))
-        else:
-            print(f"No {data_frequency} balance sheet data found for {ticker_symbol}.")
-    except Exception as e:
-        print(f"Error fetching/processing balance sheet for {ticker_symbol}: {e}")
+            if not data_stmt.empty:
+                data_stmt_proc = data_stmt.T # Transpose to have dates as rows
+                
+                # TODO: Standardize selected features, possibly driven by config (e.g., from FeatureEngineeringConfig).
+                #       The current selection is hardcoded.
+                selected_cols = {}
+                if stmt_type == 'financials':
+                    if 'Total Revenue' in data_stmt_proc.columns: selected_cols['fund_TotalRevenue'] = data_stmt_proc['Total Revenue']
+                    if 'Net Income' in data_stmt_proc.columns: selected_cols['fund_NetIncome'] = data_stmt_proc['Net Income']
+                    if 'Gross Profit' in data_stmt_proc.columns: selected_cols['fund_GrossProfit'] = data_stmt_proc['Gross Profit']
+                    if 'Operating Income' in data_stmt_proc.columns: selected_cols['fund_OperatingIncome'] = data_stmt_proc['Operating Income']
+                    if 'EBITDA' in data_stmt_proc.columns: selected_cols['fund_EBITDA'] = data_stmt_proc['EBITDA']
+                elif stmt_type == 'balance_sheet':
+                    if 'Total Assets' in data_stmt_proc.columns: selected_cols['fund_TotalAssets'] = data_stmt_proc['Total Assets']
+                    if 'Total Liab' in data_stmt_proc.columns: selected_cols['fund_TotalLiabilities'] = data_stmt_proc['Total Liab']
+                    if 'Total Stockholder Equity' in data_stmt_proc.columns: selected_cols['fund_TotalEquity'] = data_stmt_proc['Total Stockholder Equity']
+                    if 'Total Current Assets' in data_stmt_proc.columns: selected_cols['fund_TotalCurrentAssets'] = data_stmt_proc['Total Current Assets']
+                    if 'Total Current Liabilities' in data_stmt_proc.columns: selected_cols['fund_TotalCurrentLiabilities'] = data_stmt_proc['Total Current Liabilities']
+                elif stmt_type == 'cashflow':
+                    if 'Total Cash From Operating Activities' in data_stmt_proc.columns: selected_cols['fund_OperatingCashFlow'] = data_stmt_proc['Total Cash From Operating Activities']
+                    if 'Total Cash From Investing Activities' in data_stmt_proc.columns: selected_cols['fund_InvestingCashFlow'] = data_stmt_proc['Total Cash From Investing Activities']
+                    if 'Total Cash From Financing Activities' in data_stmt_proc.columns: selected_cols['fund_FinancingCashFlow'] = data_stmt_proc['Total Cash From Financing Activities']
+                    if 'Capital Expenditures' in data_stmt_proc.columns: selected_cols['fund_CapitalExpenditures'] = data_stmt_proc['Capital Expenditures']
+                    if 'Free Cash Flow' in data_stmt_proc.columns: selected_cols['fund_FreeCashFlow'] = data_stmt_proc['Free Cash Flow']
 
-    # 3. Cash Flow
-    try:
-        if data_frequency == 'quarterly':
-            cashflow = ticker.quarterly_cashflow
-        else:
-            cashflow = ticker.cashflow
-            
-        if not cashflow.empty:
-            cashflow_proc = cashflow.T
-            selected_cf = {}
-            if 'Total Cash From Operating Activities' in cashflow_proc.columns: # Often named this or 'Operating Cash Flow'
-                selected_cf['fund_OperatingCashFlow'] = cashflow_proc['Total Cash From Operating Activities']
-            if 'Total Cash From Investing Activities' in cashflow_proc.columns:
-                selected_cf['fund_InvestingCashFlow'] = cashflow_proc['Total Cash From Investing Activities']
-            if 'Total Cash From Financing Activities' in cashflow_proc.columns:
-                selected_cf['fund_FinancingCashFlow'] = cashflow_proc['Total Cash From Financing Activities']
-            if 'Capital Expenditures' in cashflow_proc.columns:
-                 selected_cf['fund_CapitalExpenditures'] = cashflow_proc['Capital Expenditures'] # Usually negative
-            if 'Free Cash Flow' in cashflow_proc.columns: # yfinance sometimes provides this directly
-                 selected_cf['fund_FreeCashFlow'] = cashflow_proc['Free Cash Flow']
-
-
-            if selected_cf:
-                all_fund_data.append(pd.DataFrame(selected_cf))
-        else:
-            print(f"No {data_frequency} cash flow data found for {ticker_symbol}.")
-    except Exception as e:
-        print(f"Error fetching/processing cash flow for {ticker_symbol}: {e}")
+                if selected_cols:
+                    all_fund_data.append(pd.DataFrame(selected_cols))
+                else:
+                    print(f"No relevant columns found in {data_frequency} {stmt_type} for {ticker_symbol}.")
+            else:
+                print(f"No {data_frequency} {stmt_type} data found for {ticker_symbol}.")
+        except Exception as e:
+            # TODO: Log this error.
+            print(f"Error fetching/processing {stmt_type} for {ticker_symbol}: {e}")
 
     if not all_fund_data:
         print(f"No fundamental statement data could be processed for {ticker_symbol}.")
         return pd.DataFrame()
 
     # Combine all fundamental statement data
-    combined_statements_df = pd.concat(all_fund_data, axis=1)
-    
-    # Ensure index is DatetimeIndex
+    # Ensure robust concat for cases where some statements might be empty or have different date ranges.
+    # Using outer join and then handling NaNs might be safer if date indices differ significantly.
+    try:
+        combined_statements_df = pd.concat(all_fund_data, axis=1) # axis=1 joins on index (dates)
+    except Exception as e:
+        print(f"Error combining fundamental data for {ticker_symbol}: {e}")
+        return pd.DataFrame()
+        
+    if combined_statements_df.empty:
+        print(f"Combined fundamental data is empty for {ticker_symbol}.")
+        return pd.DataFrame()
+        
     combined_statements_df.index = pd.to_datetime(combined_statements_df.index)
-    
-    # Sort by date to ensure forward fill works correctly
     combined_statements_df.sort_index(inplace=True)
     
-    # Note on ticker.info:
-    # `ticker.info` provides current snapshot data. For historical daily ratios from this source,
-    # one would need to fetch and store this daily, which yfinance doesn't do retroactively.
-    # For this function, we focus on quarterly/annual statements.
-    # If specific current ratios from ticker.info are desired as constant features,
-    # they should be fetched separately and merged carefully, or a dedicated historical source used.
-    # Example: info = ticker.info; pe_ratio = info.get('trailingPE') # This is current P/E
+    # Note on ticker.info: (comment retained)
+    # ...
     
     print(f"Successfully processed fundamental statements for {ticker_symbol}. Shape: {combined_statements_df.shape}")
     return combined_statements_df

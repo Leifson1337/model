@@ -1,0 +1,12 @@
+{
+    "model_name": "sample_model_v1",
+    "model_filepath_relative": "models/sample_model.joblib",
+    "timestamp_utc": "2023-01-15T12:00:00Z",
+    "metrics": {
+        "accuracy": 0.95,
+        "f1_score": 0.92
+    },
+    "feature_config_used": {
+        "features_used": ["feat1", "feat2", "feat3"]
+    }
+}
