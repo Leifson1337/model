@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  app-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # For testing, we typically want to use the standard image build
+      # unless specific build arguments are needed for the test environment.
+      # args:
+      #   BASE_IMAGE: python:3.9-bullseye # Example if a specific base is needed for test tools
+    
+    container_name: qlop_app_test_container
+
+    environment:
+      - PYTHONUNBUFFERED=1
+      - APP_ENV=test # Indicate to the application it's in test mode
+      - LOG_LEVEL=INFO # Or DEBUG if more verbose test logs are needed
+      # Any other environment variables specific to the testing setup
+      # For example, if tests require specific API keys (ideally for mock services)
+      # - MOCK_NEWS_API_KEY=test_key_news
+    
+    # env_file:
+      # - .env.test # If you have a specific .env file for testing
+
+    # For testing, we run against the code built into the image.
+    # Do NOT mount the source code like in docker-compose.dev.yml.
+    # However, you might want to mount volumes for:
+    # - Test reports (e.g., coverage reports, JUnit XML)
+    # - Test-specific configuration files if not part_of the image.
+    # - Input test data if it's very large and not included in the image.
+    volumes:
+      - ./coverage_reports:/app/coverage_reports # Example: Mount a directory for coverage reports
+      - ./test_results:/app/test_results         # Example: Mount a directory for test XML results
+      # If your tests need access to the `logs` directory that the application creates inside the container:
+      - ./logs:/app/logs # This can be useful for inspecting logs generated during tests
+
+    # The command to run tests. This overrides the Dockerfile's CMD.
+    # The entrypoint.sh from Dockerfile will still be used.
+    # This command is passed as arguments to entrypoint.sh.
+    # Option 1: Use run_tests.py (if it handles test execution and reporting)
+    command: ["python", "run_tests.py"]
+    #
+    # Option 2: Directly invoke pytest
+    # command: ["pytest", "tests/", "-vv", "--junitxml=/app/test_results/results.xml", "--cov=/app/src", "--cov-report=xml:/app/coverage_reports/coverage.xml"]
+    #
+    # Option 3: If entrypoint.sh is complex and handles test runs:
+    # command: ["test"] # Assuming entrypoint.sh has a 'test' argument
+
+    # No ports need to be exposed for a test runner service.
+
+    # tty and stdin_open are generally not needed for automated test runs,
+    # unless you plan to debug by exec-ing into a failed test container.
+    # tty: false
+    # stdin_open: false
+
+networks:
+  default:
+    driver: bridge
+```

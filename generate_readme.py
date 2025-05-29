@@ -33,27 +33,38 @@ class ReadmeGenerator:
     NO_DATA_MARKER = object() # Unique marker for no data returned by generator methods
 
     README_PLACEHOLDER_CONFIG = {
+        "{{VERSION}}": {"method_name": "_get_project_version"},
         "{{project_overview}}": {"source_file": "00_overview.md"},
         "{{features_summary}}": {"source_file": "01_features.md"}, # Contains {{feature_list}}
         "{{setup_instructions_link}}": {"content": "[docs/sections/02_setup.md](./docs/sections/02_setup.md) or see [full setup guide](./docs/setup/)"},
         "{{usage_gui_link}}": {"content": "[docs/sections/03_usage_gui.md](./docs/sections/03_usage_gui.md)"},
         "{{cli_commands_summary}}": {
             "method_name": "_generate_cli_commands_summary",
-            "render_if_empty": True, # Default, but explicit
+            "render_if_empty": True, 
             "empty_message": "CLI commands could not be determined. Run `python main.py --help` manually."
         },
         "{{api_usage_link}}": {"content": "[docs/sections/05_usage_api.md](./docs/sections/05_usage_api.md)"},
-        "{{examples_link}}": {"content": "[docs/sections/06_examples.md](./docs/sections/06_examples.md)"}, # Contains {{examples_list}}
-        "{{architecture_overview_link}}": {"source_file": "07_architecture.md"}, # Contains {{models_overview}}
-        "{{models_overview}}": {
+        "{{examples_link}}": {"source_file": "06_examples.md"}, # Contains {{examples_list}}
+        "{{architecture_overview_link}}": {"source_file": "07_architecture.md"}, 
+        "{{MODEL_REGISTRY_SUMMARY}}": {
+            "method_name": "_generate_model_registry_summary",
+            "render_if_empty": True,
+            "empty_message": "No models found in `models/model_registry.jsonl`."
+        },
+        "{{models_overview}}": { # This is for individual .meta.json files, distinct from registry summary
             "method_name": "_generate_models_overview",
             "render_if_empty": True,
-            "empty_message": "No models with metadata (`.meta.json` files) found in `models/` directory. Train some models first!"
+            "empty_message": "No individual models with metadata (`.meta.json` files) found in `models/` directory."
+        },
+        "{{KEY_METRICS_SUMMARY}}": {
+            "method_name": "_generate_key_metrics_summary",
+            "render_if_empty": True,
+            "empty_message": "Key metrics files (`baseline_stats.json`, `current_stats.json`) not found or metrics are missing."
         },
         "{{latest_evaluation_metrics}}": {
             "method_name": "_generate_latest_evaluation_metrics",
-            "render_if_empty": False, # Hide this section if no metrics file
-            "empty_message": "" # Not strictly needed if render_if_empty is False
+            "render_if_empty": False, 
+            "empty_message": "" 
         },
         "{{changelog_summary}}": {
             "method_name": "_get_changelog_summary",
@@ -61,14 +72,14 @@ class ReadmeGenerator:
             "empty_message": "No changelog information available (no Git history or CHANGELOG.md found)."
         },
         "{{roadmap_link}}": {"source_file": "08_roadmap.md"}, # Contains {{pipeline_status}}
-        "{{pipeline_status}}": {"method_name": "_get_current_pipeline_status"}, # Assumed to always return something
+        "{{pipeline_status}}": {"method_name": "_get_current_pipeline_status"}, 
         "{{contributing_guidelines}}": {"source_file": "10_contributing.md"},
         "{{license_info}}": {"source_file": "11_license.md"},
-        # Internal placeholders (processed when their containing section file is loaded)
-        "{{feature_list}}": {"method_name": "_generate_feature_list"}, # Assumed to always return content
+        # Internal placeholders
+        "{{feature_list}}": {"method_name": "_generate_feature_list"}, 
         "{{examples_list}}": {
             "method_name": "_generate_examples_list",
-            "render_if_empty": True, # Example for an internal placeholder
+            "render_if_empty": True, 
             "empty_message": "No examples documented yet."
             },
     }
@@ -76,46 +87,169 @@ class ReadmeGenerator:
     def __init__(self, template_path="README_TEMPLATE.md"):
         self.template_path = template_path
 
-    def _generate_models_overview(self):
+    def _get_project_version(self):
+        try:
+            with open("VERSION", "r", encoding="utf-8") as f:
+                version = f.read().strip()
+            return version if version else self.NO_DATA_MARKER
+        except FileNotFoundError:
+            print("Warning: VERSION file not found.")
+            return self.NO_DATA_MARKER
+        except Exception as e:
+            print(f"Warning: Error reading VERSION file: {e}")
+            return self.NO_DATA_MARKER
+
+    def _generate_model_registry_summary(self):
+        registry_file = os.path.join(self.MODELS_DIR, "model_registry.jsonl")
+        if not os.path.exists(registry_file):
+            return self.NO_DATA_MARKER
+
+        models = {}
+        try:
+            with open(registry_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                        model_name = entry.get("model_name_from_config")
+                        # Use 'model_version' as primary key for version, fallback to timestamp if needed for sorting
+                        version_key = entry.get("model_version", entry.get("timestamp_utc"))
+                        timestamp = entry.get("timestamp_utc", "N/A") # Ensure timestamp is always available for display
+
+                        if model_name:
+                            if model_name not in models:
+                                models[model_name] = {"latest_version_key": version_key, "timestamp": timestamp, "entry": entry}
+                            else:
+                                # Compare based on timestamp_utc for recency
+                                # Assuming more recent timestamp means "later" or "more relevant" version
+                                current_latest_timestamp = models[model_name]["timestamp"]
+                                if timestamp > current_latest_timestamp: # String comparison for ISO timestamps usually works
+                                    models[model_name] = {"latest_version_key": version_key, "timestamp": timestamp, "entry": entry}
+                    except json.JSONDecodeError:
+                        print(f"Warning: Skipping malformed JSON line in {registry_file}: {line.strip()}")
+                        continue
+            
+            if not models:
+                return self.NO_DATA_MARKER
+
+            summary_lines = ["**Model Registry Highlights:**"]
+            for name, data in sorted(models.items()):
+                entry_data = data["entry"]
+                metric_name = entry_data.get("primary_metric_name", "N/A")
+                metric_value = entry_data.get("primary_metric_value", "N/A")
+                if isinstance(metric_value, float): metric_value_str = f"{metric_value:.3f}"
+                else: metric_value_str = str(metric_value)
+                
+                summary_lines.append(
+                    f"-   **{name}**: Latest version `{data['latest_version_key']}` "
+                    f"(Updated: {data['timestamp']}, Metric: {metric_name} = {metric_value_str})"
+                )
+            return "\n".join(summary_lines)
+
+        except Exception as e:
+            print(f"Error processing model registry {registry_file}: {e}")
+            return self.NO_DATA_MARKER
+
+    def _generate_key_metrics_summary(self):
+        metrics_summary_parts = ["**Key Performance Indicators (Conceptual):**"]
+        found_any_metrics = False
+
+        for filename, label in [("baseline_stats.json", "Baseline"), ("current_stats.json", "Current")]:
+            try:
+                with open(filename, "r", encoding="utf-8") as f:
+                    stats = json.load(f)
+                # Example: Extract a specific, known top-level metric. This needs to be adapted to actual file structure.
+                # For this example, let's assume a simple structure like {"summary_metric": {"accuracy": 0.X}}
+                # Or, if the structure is flat: {"accuracy": 0.X}
+                accuracy = None
+                if "summary_metric" in stats and isinstance(stats["summary_metric"], dict):
+                    accuracy = stats["summary_metric"].get("accuracy")
+                elif "accuracy" in stats : # Check if accuracy is a top-level key
+                    accuracy = stats.get("accuracy")
+                
+                if accuracy is not None:
+                    metrics_summary_parts.append(f"-   **{label} Accuracy**: {accuracy:.3f} (from `{filename}`)")
+                    found_any_metrics = True
+                else:
+                    metrics_summary_parts.append(f"-   {label} stats (`{filename}`): Main accuracy metric not found in expected location.")
+            except FileNotFoundError:
+                metrics_summary_parts.append(f"-   {label} stats file (`{filename}`) not found.")
+            except json.JSONDecodeError:
+                metrics_summary_parts.append(f"-   Error reading {label} stats from `{filename}` (invalid JSON).")
+            except Exception as e:
+                 metrics_summary_parts.append(f"-   Error processing {label} stats from `{filename}`: {e}.")
+        
+        if not found_any_metrics and len(metrics_summary_parts) == 1 : # Only title was added
+             return self.NO_DATA_MARKER # No files found, or no relevant metrics in them
+
+        metrics_summary_parts.append("\n*Note: This is a conceptual summary. Refer to detailed evaluation reports for comprehensive metrics.*")
+        return "\n".join(metrics_summary_parts)
+
+
+    def _generate_models_overview(self): # For individual .meta.json files
         if not os.path.isdir(self.MODELS_DIR):
             return self.NO_DATA_MARKER
-        meta_files = glob.glob(os.path.join(self.MODELS_DIR, "*.meta.json"))
+        
+        # Look for .meta.json files inside model-specific version subdirectories
+        # e.g., models/XGBoostTest/v20230101000000_abc123/model.meta.json
+        meta_files = glob.glob(os.path.join(self.MODELS_DIR, "*", "*", "*.meta.json"))
+        # Also include .meta.json files directly under MODELS_DIR if any (legacy or simple models)
+        meta_files.extend(glob.glob(os.path.join(self.MODELS_DIR, "*.meta.json")))
+
         if not meta_files:
             return self.NO_DATA_MARKER
 
-        table_header = "| Model File | Timestamp (UTC) | Key Metric(s) | Features Info |\n"
-        table_separator = "|--------------|-------------------|-----------------|---------------|\n"
+        table_header = "| Model Name / Path | Timestamp (UTC) | Key Metric(s) | Features Info |\n"
+        table_separator = "|---------------------|-------------------|-----------------|---------------|\n"
         table_rows = []
 
-        for meta_file_path in meta_files:
+        for meta_file_path in sorted(list(set(meta_files))): # Sort and unique
             try:
                 with open(meta_file_path, 'r', encoding='utf-8') as f:
                     meta_data = json.load(f)
                 
-                model_file = meta_data.get("model_name", os.path.basename(meta_file_path).replace(".meta.json", ""))
+                # Try to get a more descriptive model name if available (e.g. from model_name_from_config)
+                model_display_name = meta_data.get("model_name_from_config", meta_data.get("model_name"))
+                if not model_display_name:
+                    # Fallback to directory structure if no explicit name
+                    path_parts = Path(meta_file_path).parts
+                    if len(path_parts) > 2 and path_parts[-3] == self.MODELS_DIR: # models/ModelType/Version/model.meta.json
+                        model_display_name = f"{path_parts[-2]}/{path_parts[-1].replace('.meta.json','')}"
+                    else: # models/model.meta.json
+                        model_display_name = Path(meta_file_path).stem.replace('.meta','')
+                
                 timestamp = meta_data.get("timestamp_utc", meta_data.get("timestamp", "N/A"))
                 
                 metrics_str = "N/A"
-                metrics_data = meta_data.get("metrics", {})
-                if metrics_data:
+                metrics_data = meta_data.get("evaluation_metrics", meta_data.get("metrics", {})) # Check common keys for metrics
+                if metrics_data and isinstance(metrics_data, dict):
+                    # Prioritize common metrics
                     if "accuracy" in metrics_data: metrics_str = f"Acc: {metrics_data['accuracy']:.3f}"
+                    elif "f1_score_macro" in metrics_data: metrics_str = f"F1 (macro): {metrics_data['f1_score_macro']:.3f}"
                     elif "f1_score" in metrics_data: metrics_str = f"F1: {metrics_data['f1_score']:.3f}"
+                    elif "roc_auc" in metrics_data: metrics_str = f"ROC AUC: {metrics_data['roc_auc']:.3f}"
                     elif "auc" in metrics_data: metrics_str = f"AUC: {metrics_data['auc']:.3f}"
-                    else: key, val = next(iter(metrics_data.items())); metrics_str = f"{key[:4]}: {val:.3f}" if isinstance(val, float) else f"{key[:4]}: {val}"
+                    else: # Fallback to first metric if common ones not found
+                        key, val = next(iter(metrics_data.items()), (None, None))
+                        if key: metrics_str = f"{key[:10]}: {val:.3f}" if isinstance(val, float) else f"{key[:10]}: {val}"
 
                 features_str = "N/A"
-                feature_config = meta_data.get("feature_config_used", meta_data.get("feature_config", {}))
-                if feature_config:
-                    features_used = feature_config.get("features_used")
-                    if features_used and isinstance(features_used, list):
-                        features_str = f"{len(features_used)} (e.g., {', '.join(features_used[:2])}...)"
-                    elif isinstance(feature_config, dict) and feature_config:
+                feature_config = meta_data.get("feature_engineering_config", meta_data.get("feature_config_used", meta_data.get("feature_config", {})))
+                if feature_config and isinstance(feature_config, dict):
+                    # Check for a list of features directly or within a sub-key
+                    features_used_list = feature_config.get("features_used", feature_config.get("selected_features")) 
+                    if features_used_list and isinstance(features_used_list, list):
+                        features_str = f"{len(features_used_list)} features"
+                        if len(features_used_list) > 0 : features_str += f" (e.g., {', '.join(map(str, features_used_list[:2]))}...)"
+                    elif feature_config: # If feature_config dict exists but no specific list
                         features_str = "Configured (see meta)"
                 
-                table_rows.append(f"| `{model_file}` | {timestamp} | {metrics_str} | {features_str} |")
+                table_rows.append(f"| `{model_display_name}` | {timestamp} | {metrics_str} | {features_str} |")
+            except json.JSONDecodeError:
+                print(f"Warning: Could not parse JSON from {meta_file_path}")
+                table_rows.append(f"| `{Path(meta_file_path).parent.name}/{Path(meta_file_path).stem}` | N/A | Invalid JSON | N/A |")
             except Exception as e:
                 print(f"Warning: Error processing metadata file {meta_file_path}: {e}")
-                table_rows.append(f"| {os.path.basename(meta_file_path).replace('.meta.json','')} | N/A | Error parsing | N/A |")
+                table_rows.append(f"| `{Path(meta_file_path).parent.name}/{Path(meta_file_path).stem}` | N/A | Error processing | N/A |")
         
         return table_header + table_separator + "\n".join(table_rows) if table_rows else self.NO_DATA_MARKER
 

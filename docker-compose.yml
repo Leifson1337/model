@@ -1,67 +1,101 @@
-version: '3.8' # Specify docker-compose version
+# Docker Compose file version. Version 3.8 is widely compatible.
+version: '3.8'
 
+# Defines the services (containers) that make up your application.
 services:
+  # Defines the 'app' service, which is our main application container.
   app:
+    # Specifies how to build the image for this service.
     build:
-      context: . # Use the current directory as the build context
-      dockerfile: Dockerfile # Specify the Dockerfile name
-    container_name: qlop_app_container
-    # image: qlop_app_image # Optionally specify image name if you want to tag it during build via compose
+      # The build context is the current directory (project root).
+      context: .
+      # Specifies the Dockerfile to use for building the image.
+      dockerfile: Dockerfile
+      # Build arguments can be passed to the Dockerfile.
+      # Example: To use a specific base image for GPU support (see Dockerfile ARGs).
+      # args:
+      #   BASE_IMAGE: nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
+      #   FINAL_BASE_IMAGE: nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
     
-    # Environment variables can be passed from .env file or defined here
-    # env_file:
-    #   - .env 
-    # environment:
-    #   - PYTHONUNBUFFERED=1 # Ensures print statements appear without delay
-    #   - APP_ENV=development # Example environment variable
+    # Sets a custom container name for easier identification.
+    container_name: qlop_app_container
+    
+    # Optionally, specify an image name if you want Docker Compose to tag the image it builds.
+    # image: your_username/qlop_app:latest
 
-    # Volumes for development: Mount current directory to /app in container
-    # This allows code changes to be reflected without rebuilding the image.
-    # For production, you might not use host-mounted volumes for code.
+    # Environment variables to set inside the container.
+    # These can be used to configure the application without rebuilding the image.
+    # `PYTHONUNBUFFERED=1` ensures that Python output (print statements, logs) is sent directly
+    # to the terminal without being buffered, which is useful for debugging.
+    environment:
+      - PYTHONUNBUFFERED=1 
+      # - APP_ENV=development # Example: set application environment
+      # - LOG_LEVEL=DEBUG # Example: override log level
+      # - NEWS_API_KEY=${NEWS_API_KEY} # Pass secrets from host environment or .env file
+
+    # Use an .env file to manage environment variables, especially secrets.
+    # Create a .env file in the project root (and add it to .gitignore).
+    # Example .env file content:
+    # NEWS_API_KEY=your_actual_news_api_key
+    # ALPHA_VANTAGE_API_KEY=your_actual_alpha_vantage_key
+    env_file:
+      - .env # Docker Compose will look for a file named .env in the project root
+
+    # Volumes mount host directories or named volumes into the container.
+    # This is crucial for development to see code changes live without rebuilding.
+    # For production, you typically bake the code into the image and might use named volumes for persistent data.
     volumes:
-      - .:/app  # Mounts the project root on the host to /app in the container
-      # Example: Mount specific config files if they are not copied by Dockerfile or need to persist
-      # - ./config/prod.json:/app/config/prod.json:ro # Read-only mount for prod config
-      # Example: Mount data and models directories if they are large and managed outside the container
-      # - ./data:/app/data 
+      # Mounts the entire project directory on the host to /app in the container.
+      # Changes made to the code on the host are immediately reflected in the container.
+      - .:/app
+      
+      # Example: Persist data that the application generates or needs.
+      # These could be named volumes or host mounts.
+      # Named volumes are managed by Docker and are preferred for data persistence.
+      # - app_data:/app/data             # Mounts a named volume 'app_data' to /app/data
+      # - app_models:/app/models         # Mounts a named volume 'app_models' to /app/models
+      # - app_logs:/app/logs             # Mounts a named volume 'app_logs' to /app/logs
+      # Alternatively, use host mounts if you want direct access on the host:
+      # - ./data:/app/data
       # - ./models:/app/models
+      # - ./logs:/app/logs
 
-    # Ports: Expose ports if the application runs a web service (e.g., API or Streamlit GUI)
-    # For Streamlit GUI (if running it via docker-compose):
+    # Ports mapping: <host_port>:<container_port>
+    # Expose ports if your application runs a web service (e.g., API or Streamlit GUI).
+    # If not running a server, this section might not be needed.
     # ports:
-    #   - "8501:8501" 
-    # For an API (e.g., FastAPI on port 8000):
-    # ports:
+    #   # Example for Streamlit (if running `streamlit run gui.py`)
+    #   - "8501:8501"
+    #   # Example for a FastAPI/Flask API (if running `uvicorn api.main:app --host 0.0.0.0 --port 8000`)
     #   - "8000:8000"
 
     # Entrypoint and Command:
-    # The Dockerfile already has ENTRYPOINT ["python", "main.py"] and CMD ["--help"]
-    # If using entrypoint.sh, Dockerfile's ENTRYPOINT will be overridden or complemented by this.
-    # entrypoint: ["/app/entrypoint.sh"] # Assuming entrypoint.sh is in project root and copied to /app
-    
-    # Default command to run if not specified in Dockerfile's CMD or overridden here.
-    # For example, to run the Streamlit app by default if this compose file is for GUI:
-    # command: streamlit run gui.py --server.port 8501 --server.address 0.0.0.0
-    # If entrypoint.sh is used, command here is passed as arguments to entrypoint.sh
-    # command: ["python", "main.py", "--help"] # Default, matches Dockerfile's CMD
+    # The Dockerfile defines the default ENTRYPOINT and CMD.
+    # `entrypoint` in docker-compose overrides the Dockerfile's ENTRYPOINT.
+    # `command` in docker-compose overrides the Dockerfile's CMD.
+    # Our Dockerfile uses an entrypoint.sh script, so these can usually be left commented out
+    # unless specific overrides are needed for this compose file.
+    # entrypoint: ["/app/entrypoint.sh"] # Matches Dockerfile
+    # command: ["python", "main.py", "--help"] # Default command passed to entrypoint.sh
 
-    # For development, you might want to keep the container running
-    # tty: true # Keeps the container running, useful for exec-ing into it
-    # stdin_open: true
+    # For development, keeping the container running even if the default command exits can be useful.
+    # `tty: true` allocates a pseudo-TTY.
+    # `stdin_open: true` keeps STDIN open.
+    # This allows `docker exec -it qlop_app_container bash`.
+    tty: true
+    stdin_open: true
 
-    # Healthcheck (optional, example for a web service)
-    # healthcheck:
-    #   test: ["CMD", "curl", "-f", "http://localhost:8000/health"] # Adjust for your app
-    #   interval: 30s
-    #   timeout: 10s
-    #   retries: 3
-    #   start_period: 30s
+    # Healthcheck: Uses the HEALTHCHECK instruction defined in the Dockerfile.
+    # No need to redefine here unless you want to override the Dockerfile's healthcheck.
 
-networks: # Define networks if needed for multi-container setups
+# Defines custom networks. By default, Docker Compose creates a bridge network for all services in the file.
+networks:
   default:
-    driver: bridge
+    driver: bridge # Default network driver
 
-# Named volumes (optional, for persistent data if not using host mounts)
+# Defines named volumes. These are managed by Docker and are useful for persisting data
+# generated by or used by Docker containers, independent of the container lifecycle.
 # volumes:
-#   app_data:
-#   app_models:
+#   app_data: # Data generated/used by the app (e.g., downloaded datasets, processed features)
+#   app_models: # Trained models
+#   app_logs: # Application logs
